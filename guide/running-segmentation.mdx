@@ -1,0 +1,402 @@
+---
+title: Running Segmentation
+description: Step-by-step guide to performing tissue segmentation via web UI and Python API
+---
+
+DigiPathAI provides two ways to run tissue segmentation: through the web interface or programmatically via Python API.
+
+## Web Interface Workflow
+
+<Steps>
+  <Step title="Start the server">
+    Launch the web interface with segmentation enabled:
+    ```bash
+    python -m DigiPathAI.main_server -s /path/to/slides -p 8080
+    ```
+    
+    <Warning>
+      Do not use the `--viewer-only` flag if you want to run segmentation.
+    </Warning>
+  </Step>
+  
+  <Step title="Select a slide">
+    Navigate to `http://127.0.0.1:8080` and click on a slide from the file browser to open it in the viewer.
+  </Step>
+  
+  <Step title="Choose tissue type">
+    Click the "Tissue Type" dropdown in the left sidebar and select:
+    - **Colon** - For colorectal cancer segmentation
+    - **Liver** - For liver cancer segmentation  
+    - **Breast** - For breast cancer metastasis segmentation
+    
+    <Note>
+      Each tissue type uses different pre-trained models optimized for that specific tissue.
+    </Note>
+  </Step>
+  
+  <Step title="Run segmentation">
+    Click the "Get segmentation" button. The system will:
+    - Disable the button to prevent duplicate runs
+    - Start a background thread for processing
+    - Display real-time status updates
+    - Show a progress bar (0-100%)
+  </Step>
+  
+  <Step title="Monitor progress">
+    The interface polls status every 2 seconds, showing:
+    ```
+    Status: Running segmentation
+    Progress: 45%
+    ```
+    
+    Status messages you'll see:
+    - "Downloading Trained Models" (first run only)
+    - "Found Trained Models, Skipping download"
+    - "Loading Trained weights"
+    - "Running segmentation"
+    - "Saving Prediction Mask..."
+    - "Saving Prediction Uncertainty..."
+    - "Done"
+  </Step>
+  
+  <Step title="View results">
+    When complete, the page automatically refreshes. Toggle "Show Cancer Regions" to overlay the segmentation mask on the original slide.
+  </Step>
+</Steps>
+
+## Python API Usage
+
+### Basic Segmentation
+
+The `getSegmentation()` function is the primary API for programmatic segmentation:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Run segmentation on a colon tissue slide
+mask = getSegmentation(
+    img_path='examples/colon-cancer-1.tiff',
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=True,
+    mode='colon'
+)
+```
+
+### Function Parameters
+
+<ParamField path="img_path" type="str" required>
+  Path to the whole slide image (WSI) in TIFF or other OpenSlide-compatible format.
+</ParamField>
+
+<ParamField path="patch_size" type="int" default={256}>
+  Size of patches for inference. Must match model input size (256x256).
+</ParamField>
+
+<ParamField path="stride_size" type="int" default={128}>
+  Stride/step size for sliding window. Smaller values = more overlap = better accuracy but slower.
+  
+  <Tip>
+    Use `stride_size = patch_size // 2` for good quality/speed balance.
+  </Tip>
+</ParamField>
+
+<ParamField path="batch_size" type="int" default={32}>
+  Number of patches processed simultaneously. Increase for faster processing if GPU memory allows.
+</ParamField>
+
+<ParamField path="quick" type="bool" default={True}>
+  - `True`: Use single model (faster, ~4x speed improvement)
+  - `False`: Ensemble of 3 models (more accurate)
+</ParamField>
+
+<ParamField path="model" type="str" default="dense">
+  Model architecture to use when `quick=True`. Options:
+  - `'dense'` - DenseNet-based model
+  - `'inception'` - Inception-based model
+  - `'deeplabv3'` - DeepLabV3+ model
+</ParamField>
+
+<ParamField path="mode" type="str" required>
+  Tissue type for segmentation. Must be one of:
+  - `'colon'` - Colorectal tissue
+  - `'liver'` - Liver tissue
+  - `'breast'` - Breast tissue
+</ParamField>
+
+<ParamField path="tta_list" type="list" default={None}>
+  Test-time augmentation strategies. Options:
+  - `'FLIP_LEFT_RIGHT'`
+  - `'ROTATE_90'`
+  - `'ROTATE_180'`
+  - `'ROTATE_270'`
+  
+  Example: `tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90']`
+</ParamField>
+
+<ParamField path="crf" type="bool" default={False}>
+  Apply Conditional Random Fields for post-processing smoothing.
+</ParamField>
+
+<ParamField path="mask_path" type="str" default="../Results">
+  Path to save the binary segmentation mask.
+</ParamField>
+
+<ParamField path="uncertainty_path" type="str" default="../Results">
+  Path to save the uncertainty/variance map.
+</ParamField>
+
+### Advanced Example: Ensemble with TTA
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# High-accuracy segmentation with ensemble and augmentation
+mask = getSegmentation(
+    img_path='slides/liver-biopsy.tiff',
+    patch_size=256,
+    stride_size=128,        # 50% overlap
+    batch_size=16,          # Adjust based on GPU memory
+    quick=False,            # Use ensemble of 3 models
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90'],  # Test-time augmentation
+    mode='liver',
+    mask_path='results/liver-mask.tiff',
+    uncertainty_path='results/liver-uncertainty.tiff'
+)
+
+print(f"Mask shape: {mask.shape}")
+print(f"Positive pixels: {(mask > 0).sum()}")
+```
+
+<Warning>
+  Ensemble mode (`quick=False`) requires significantly more GPU memory and takes ~4x longer than single model mode.
+</Warning>
+
+### Model Selection (Quick Mode)
+
+```python
+# Compare different architectures
+for model_name in ['dense', 'inception', 'deeplabv3']:
+    mask = getSegmentation(
+        img_path='slide.tiff',
+        quick=True,
+        model=model_name,
+        mode='colon',
+        mask_path=f'results/mask_{model_name}.tiff'
+    )
+```
+
+## Batch Processing
+
+### Processing Multiple Slides
+
+```python
+import glob
+from DigiPathAI.Segmentation import getSegmentation
+import os
+
+# Process all slides in a directory
+slide_dir = 'data/colon_slides'
+output_dir = 'results/colon_masks'
+os.makedirs(output_dir, exist_ok=True)
+
+for slide_path in glob.glob(f"{slide_dir}/*.tiff"):
+    slide_name = os.path.basename(slide_path)
+    mask_name = slide_name.replace('.tiff', '-dgai-mask.tiff')
+    uncertainty_name = slide_name.replace('.tiff', '-dgai-uncertainty.tiff')
+    
+    print(f"Processing: {slide_name}")
+    
+    getSegmentation(
+        img_path=slide_path,
+        mode='colon',
+        quick=True,
+        batch_size=32,
+        mask_path=os.path.join(output_dir, mask_name),
+        uncertainty_path=os.path.join(output_dir, uncertainty_name)
+    )
+    
+    print(f"Completed: {slide_name}")
+```
+
+### Custom Status Tracking
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+import threading
+
+# Status dictionary for progress tracking
+status = {
+    'status': '',
+    'progress': 0,
+    'tissuetype': 'liver'
+}
+
+def monitor_progress(status_dict):
+    """Monitor segmentation progress in a separate thread"""
+    while status_dict['status'] != 'Done':
+        print(f"Status: {status_dict['status']} - {status_dict['progress']}%")
+        time.sleep(1)
+
+# Start monitoring thread
+monitor = threading.Thread(target=monitor_progress, args=(status,))
+monitor.start()
+
+# Run segmentation with status tracking
+mask = getSegmentation(
+    img_path='slide.tiff',
+    mode='liver',
+    status=status  # Pass status dict for progress updates
+)
+
+monitor.join()
+print("Segmentation complete!")
+```
+
+## Model Download and Caching
+
+On first run, DigiPathAI automatically downloads pre-trained models:
+
+```python
+# Models are cached in ~/.DigiPathAI/
+# Colon models: ~/.DigiPathAI/digestpath_models/
+#   - digestpath_densenet.h5
+#   - digestpath_inception.h5
+#   - digestpath_deeplabv3.h5
+
+# Liver models: ~/.DigiPathAI/paip_models/
+#   - paip_densenet.h5
+#   - paip_inception.h5
+#   - paip_deeplabv3.h5
+
+# Breast models: ~/.DigiPathAI/camelyon_models/
+#   - camelyon_densenet.h5
+#   - camelyon_inception.h5
+#   - camelyon_deeplabv3.h5
+```
+
+<Note>
+  Models are downloaded only once. Subsequent runs detect cached models and skip the download step.
+</Note>
+
+## Output Files
+
+Segmentation produces two files:
+
+### 1. Segmentation Mask
+
+```python
+# Binary mask saved as pyramidal TIFF
+# Filename: <original_name>-dgai-mask.tiff
+# Values: 0 (background) or 255 (cancer)
+# Compression: JPEG with quality 90
+# Tiling: 256x256 tiles for efficient viewing
+```
+
+### 2. Uncertainty Map
+
+```python
+# Variance/uncertainty map saved as pyramidal TIFF  
+# Filename: <original_name>-dgai-uncertainty.tiff
+# Values: 0-255 (higher = more uncertain)
+# Compression: JPEG with quality 90
+# Tiling: 256x256 tiles
+```
+
+Both outputs are converted to pyramidal TIFF format using ImageMagick:
+
+```bash
+convert mask.tiff -compress jpeg -quality 90 \
+  -define tiff:tile-geometry=256x256 ptif:mask.tiff
+```
+
+## Performance Optimization
+
+<Accordion title="GPU Memory Optimization">
+  ```python
+  # Reduce batch size if running out of GPU memory
+  mask = getSegmentation(
+      img_path='large_slide.tiff',
+      batch_size=8,  # Lower batch size
+      mode='colon'
+  )
+  
+  # TensorFlow GPU memory growth is enabled by default
+  # This prevents TF from allocating all GPU memory at once
+  ```
+</Accordion>
+
+<Accordion title="Speed vs. Accuracy Trade-offs">
+  | Configuration | Speed | Accuracy | Use Case |
+  |--------------|-------|----------|----------|
+  | `quick=True, stride=256` | Fastest | Good | Screening/Preview |
+  | `quick=True, stride=128` | Fast | Better | Standard workflow |
+  | `quick=False, stride=128` | Slow | Best | Research/Publication |
+  | `quick=False, stride=128, tta_list=[...]` | Slowest | Highest | Critical diagnosis |
+</Accordion>
+
+<Accordion title="Parallel Processing">
+  ```python
+  from multiprocessing import Process
+  import os
+  
+  def process_slide(slide_path, gpu_id):
+      os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+      getSegmentation(
+          img_path=slide_path,
+          mode='colon',
+          quick=True
+      )
+  
+  # Process 2 slides in parallel on 2 GPUs
+  slides = ['slide1.tiff', 'slide2.tiff']
+  processes = [
+      Process(target=process_slide, args=(slides[i], i))
+      for i in range(2)
+  ]
+  
+  for p in processes:
+      p.start()
+  for p in processes:
+      p.join()
+  ```
+</Accordion>
+
+## Troubleshooting
+
+<Accordion title="ValueError: Unknown mode found">
+  Ensure `mode` is one of: `'colon'`, `'liver'`, or `'breast'` (lowercase).
+  
+  ```python
+  # Incorrect
+  getSegmentation(img_path='slide.tiff', mode='Colon')  # Wrong case
+  
+  # Correct
+  getSegmentation(img_path='slide.tiff', mode='colon')
+  ```
+</Accordion>
+
+<Accordion title="CUDA out of memory">
+  - Reduce `batch_size` (try 16, 8, or 4)
+  - Close other GPU-intensive applications
+  - Use `quick=True` instead of ensemble mode
+  - Process smaller regions by cropping the slide first
+</Accordion>
+
+<Accordion title="Model download fails">
+  - Check internet connection
+  - Verify write permissions to `~/.DigiPathAI/`
+  - Try manual download and placement in the correct directory
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Understanding Results" icon="chart-line" href="/guide/understanding-results">
+    Learn how to interpret segmentation masks and uncertainty maps
+  </Card>
+  <Card title="Web Interface" icon="browser" href="/guide/web-interface">
+    Explore the web interface features for visualization
+  </Card>
+</CardGroup>

@@ -1,0 +1,256 @@
+---
+title: CLI Options Reference
+description: Complete reference for all digipathai command-line options and flags
+---
+
+## Overview
+
+The `digipathai` command accepts various command-line options to customize the web server behavior, tile rendering settings, and application features.
+
+## General Options
+
+### Slide Directory
+
+<ParamField path="-s, --slide_dir" type="string" default=".">
+  Directory containing the whole slide images to serve. Defaults to the current directory.
+  
+  The application will recursively scan this directory for supported slide formats and display them in the file browser interface.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -s /data/pathology/slides
+```
+
+---
+
+### Host Address
+
+<ParamField path="-l, --listen" type="string" default="127.0.0.1">
+  Network address to listen on. Use `127.0.0.1` for local-only access, or `0.0.0.0` to allow connections from other machines.
+</ParamField>
+
+**Example:**
+```bash
+# Allow network access
+digipathai -l 0.0.0.0
+```
+
+---
+
+### Port
+
+<ParamField path="-p, --port" type="integer" default="8080">
+  Port number for the web server to listen on.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -p 5000
+```
+
+---
+
+### Debug Mode
+
+<ParamField path="-d, --debug" type="flag" default="false">
+  Enable Flask debug mode for development. Provides detailed error messages and automatic code reloading.
+  
+  <Note>Do not use debug mode in production environments as it can expose sensitive information and is insecure.</Note>
+</ParamField>
+
+**Example:**
+```bash
+digipathai -d
+```
+
+---
+
+### Configuration File
+
+<ParamField path="-c, --config" type="string">
+  Path to a Python configuration file to load additional settings. This file can override default Flask configuration values.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -c config.py
+```
+
+## DeepZoom Tile Options
+
+These options control how whole slide images are tiled and rendered using the DeepZoom format.
+
+### Tile Size
+
+<ParamField path="-S, --size" type="integer" default="254">
+  Size of each tile in pixels. DeepZoom generates square tiles of this dimension.
+  
+  Larger tile sizes may improve performance but increase memory usage.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -S 512
+```
+
+---
+
+### Tile Overlap
+
+<ParamField path="-e, --overlap" type="integer" default="1">
+  Number of pixels of overlap between adjacent tiles. Helps ensure seamless rendering when zooming.
+  
+  Typical values range from 0-2 pixels.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -e 2
+```
+
+---
+
+### Image Format
+
+<ParamField path="-f, --format" type="string" default="jpeg">
+  Image format for generated tiles. Supported values: `jpeg` or `png`.
+  
+  - **jpeg**: Smaller file size, faster transfer, lossy compression
+  - **png**: Larger file size, lossless compression, slower transfer
+</ParamField>
+
+**Example:**
+```bash
+digipathai -f png
+```
+
+---
+
+### JPEG Quality
+
+<ParamField path="-Q, --quality" type="integer" default="75">
+  JPEG compression quality for tile images (1-100). Higher values produce better quality but larger files.
+  
+  Only applies when using JPEG format (`-f jpeg`).
+</ParamField>
+
+**Example:**
+```bash
+digipathai -Q 90
+```
+
+---
+
+### Ignore Bounds
+
+<ParamField path="-B, --ignore-bounds" type="flag" default="false">
+  Display the entire scan area instead of limiting to the slide bounds.
+  
+  By default, DigiPathAI limits the displayed area to the slide's defined bounds. This flag disables that limitation and shows the full scanned area.
+</ParamField>
+
+**Example:**
+```bash
+digipathai -B
+```
+
+## Application Features
+
+### Viewer-Only Mode
+
+<ParamField path="--viewer-only" type="flag" default="false">
+  Disable AI segmentation functionality and run only the slide viewer.
+  
+  Use this mode when:
+  - GPU resources are not available
+  - AI dependencies are not installed
+  - You only need to view slides without performing analysis
+</ParamField>
+
+**Example:**
+```bash
+digipathai --viewer-only
+```
+
+<Tip>
+If the AI dependencies (PyTorch, TensorFlow, etc.) are not installed, the application will automatically behave as if `--viewer-only` is enabled.
+</Tip>
+
+## Combined Usage Examples
+
+### Example 1: Production Server Setup
+
+```bash
+digipathai \
+  -s /data/slides \
+  -l 0.0.0.0 \
+  -p 8080 \
+  -Q 85 \
+  -f jpeg
+```
+
+Starts a production server serving slides from `/data/slides` on all network interfaces, port 8080, with JPEG quality 85.
+
+---
+
+### Example 2: High-Quality Local Viewing
+
+```bash
+digipathai \
+  -s ./pathology_samples \
+  -f png \
+  -S 512 \
+  -e 2
+```
+
+Local server with PNG tiles, larger tile size (512px), and 2-pixel overlap for highest quality.
+
+---
+
+### Example 3: Development Configuration
+
+```bash
+digipathai \
+  -d \
+  -l 127.0.0.1 \
+  -p 5000 \
+  --viewer-only
+```
+
+Debug mode for development, local access only, custom port, viewer-only (no segmentation).
+
+---
+
+### Example 4: Network Server with Full Scan Area
+
+```bash
+digipathai \
+  -s /mnt/slides \
+  -l 0.0.0.0 \
+  -p 80 \
+  -B \
+  -Q 90
+```
+
+Network-accessible server on port 80, showing full scan area (ignoring bounds), high JPEG quality.
+
+## Option Summary Table
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--slide_dir` | `-s` | string | `.` | Directory containing slide images |
+| `--listen` | `-l` | string | `127.0.0.1` | Network address to bind to |
+| `--port` | `-p` | integer | `8080` | Port number |
+| `--debug` | `-d` | flag | false | Enable debug mode |
+| `--config` | `-c` | string | - | Configuration file path |
+| `--size` | `-S` | integer | `254` | Tile size in pixels |
+| `--overlap` | `-e` | integer | `1` | Tile overlap in pixels |
+| `--format` | `-f` | string | `jpeg` | Tile image format |
+| `--quality` | `-Q` | integer | `75` | JPEG compression quality |
+| `--ignore-bounds` | `-B` | flag | false | Display entire scan area |
+| `--viewer-only` | - | flag | false | Disable segmentation |
+
+## Source Code Reference
+
+All command-line options are defined in `DigiPathAI/main_server.py` lines 246-275 using Python's `optparse` module.

@@ -1,0 +1,97 @@
+---
+title: Introduction
+description: A powerful platform for whole slide image analysis with AI-powered tissue segmentation
+---
+
+# Welcome to DigiPathAI
+
+DigiPathAI is a comprehensive software application built on top of [OpenSlide](https://openslide.org/) for viewing whole slide images (WSI) and performing AI-powered pathological analysis. It combines an intuitive web-based viewer with state-of-the-art deep learning models for automated tissue segmentation.
+
+<CardGroup cols={2}>
+  <Card title="Interactive WSI Viewer" icon="microscope">
+    Responsive web-based interface for navigating and exploring whole slide images with support for multiple formats
+  </Card>
+  
+  <Card title="AI-Powered Segmentation" icon="brain">
+    State-of-the-art deep learning pipeline for automated cancer detection and tissue segmentation
+  </Card>
+  
+  <Card title="Multi-Tissue Support" icon="heart-pulse">
+    Pre-trained models for colon, liver, and breast tissue analysis with ensemble predictions
+  </Card>
+  
+  <Card title="Python API" icon="code">
+    Programmatic access to segmentation pipeline for integration into custom workflows
+  </Card>
+</CardGroup>
+
+## What is DigiPathAI?
+
+DigiPathAI provides a complete solution for digital pathology image analysis:
+
+- **WSI Viewer**: A browser-based interface powered by Flask and DeepZoom for seamless navigation of large whole slide images
+- **AI Segmentation**: Deep learning models (DenseNet, Inception, DeepLabv3) trained on multiple datasets for accurate tissue segmentation
+- **Flexible Deployment**: Run as a standalone viewer or with full GPU-accelerated AI capabilities
+- **Open Source**: Built on proven technologies like PyTorch, TensorFlow, and OpenSlide
+
+<Note>
+DigiPathAI has been validated in peer-reviewed research. See the [arXiv paper](https://arxiv.org/abs/2001.00258) for technical details on the generalized deep learning framework.
+</Note>
+
+## Key Capabilities
+
+### Whole Slide Image Viewing
+View and navigate gigapixel pathology images directly in your browser. DigiPathAI supports all formats compatible with OpenSlide, including:
+- TIFF/SVS (Aperio)
+- MRXS (Mirax)
+- NDPI (Hamamatsu)
+- And many more
+
+### AI-Powered Tissue Analysis
+Perform automated segmentation with pre-trained models for:
+- **Colon**: DigestPath dataset models
+- **Liver**: PAIP challenge models  
+- **Breast**: Camelyon challenge models
+
+Models are automatically downloaded on first use and support ensemble predictions for improved accuracy.
+
+### Python Integration
+Integrate segmentation into your analysis pipelines with a simple Python API. Process images programmatically with full control over patch size, batch size, test-time augmentation, and more.
+
+## Use Cases
+
+- **Research**: Analyze large cohorts of WSI images with consistent, automated segmentation
+- **Education**: Interactive viewer for teaching digital pathology concepts
+- **Algorithm Development**: Baseline segmentation models for comparison and benchmarking
+- **Quality Control**: Rapid review of tissue samples with AI assistance
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install DigiPathAI with UI-only or full AI pipeline support
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Launch the server and run your first segmentation in minutes
+  </Card>
+</CardGroup>
+
+## Citation
+
+If you use DigiPathAI in your research, please cite:
+
+```bibtex
+@article{khened2020generalized,
+  title={A Generalized Deep Learning Framework for Whole-Slide Image Segmentation and Analysis},
+  author={Khened, Mahendra and Kori, Avinash and Rajkumar, Haran and Srinivasan, Balaji and Krishnamurthi, Ganapathy},
+  journal={arXiv preprint arXiv:2001.00258},
+  year={2020}
+}
+```
+
+## Community & Support
+
+- **GitHub**: [haranrk/DigiPathAI](https://github.com/haranrk/DigiPathAI)
+- **PyPI**: [DigiPathAI package](https://pypi.org/project/DigiPathAI/)
+- **Contact**: Avinash Kori (koriavinash1@gmail.com), Haran Rajkumar (haranrajkumar97@gmail.com)

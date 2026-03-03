@@ -1,0 +1,379 @@
+---
+title: 'Advanced Configuration'
+description: 'Configure test-time augmentation, CRF post-processing, model selection, and patch-based segmentation parameters'
+icon: 'sliders'
+---
+
+## Overview
+
+DigiPathAI provides advanced configuration options for fine-tuning segmentation quality and performance. These parameters affect the AI inference pipeline.
+
+## Model Selection
+
+DigiPathAI supports three deep learning architectures, and can use them individually or as an ensemble.
+
+### Available Models
+
+<ParamField path="model" type="string" default="dense">
+  Select which neural network architecture to use for segmentation.
+  
+  **Options:**
+  - `dense` - DenseNet-based architecture
+  - `inception` - Inception-based architecture  
+  - `deeplabv3` - DeepLab v3 architecture
+</ParamField>
+
+### Single Model Mode
+
+Use a single model for faster inference:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+getSegmentation(
+    img_path='slide.tiff',
+    model='dense',      # Choose: 'dense', 'inception', or 'deeplabv3'
+    quick=True          # Single model mode
+)
+```
+
+<Note>
+  Single model mode is controlled by the `quick` parameter. When `quick=True`, only the model specified by the `model` parameter is used (`Segmentation.py:288-300`).
+</Note>
+
+### Ensemble Mode
+
+Use all three models for best accuracy:
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    quick=False  # Ensemble of all 3 models
+)
+```
+
+<Warning>
+  Ensemble mode uses 3x more GPU memory and is approximately 3x slower, but typically produces more accurate segmentations.
+</Warning>
+
+## Test-Time Augmentation (TTA)
+
+Test-time augmentation applies transformations to input patches during inference and averages predictions for improved robustness.
+
+<ParamField path="tta_list" type="list" default="None">
+  List of augmentation transformations to apply during inference.
+  
+  **Allowed values:**
+  - `FLIP_LEFT_RIGHT` - Horizontal flip
+  - `ROTATE_90` - 90° rotation
+  - `ROTATE_180` - 180° rotation
+  - `ROTATE_270` - 270° rotation
+</ParamField>
+
+### Basic TTA
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    tta_list=['FLIP_LEFT_RIGHT']  # Single augmentation
+)
+```
+
+### Multiple Augmentations
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    tta_list=[
+        'FLIP_LEFT_RIGHT',
+        'ROTATE_90',
+        'ROTATE_180',
+        'ROTATE_270'
+    ]  # All augmentations (5x slower but more robust)
+)
+```
+
+### No TTA (Default)
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    tta_list=None  # Fastest inference
+)
+```
+
+<Note>
+  TTA processing is implemented in `Segmentation.py:95-99`. The DEFAULT transformation is always included, and specified augmentations are concatenated to it.
+</Note>
+
+### Performance Impact
+
+| TTA Configuration | Relative Speed | Use Case |
+|-------------------|----------------|----------|
+| None | 1x (fastest) | Quick analysis, preliminary results |
+| 1 augmentation | ~2x slower | Balanced accuracy/speed |
+| 4 augmentations | ~5x slower | Maximum accuracy, final analysis |
+
+## Patch-Based Segmentation
+
+### Patch Size
+
+<ParamField path="patch_size" type="integer" default="256">
+  Size of square patches extracted from the whole slide image for segmentation.
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    patch_size=256  # 256x256 pixels
+)
+```
+
+**Considerations:**
+- Larger patches (512) capture more context but require more GPU memory
+- Smaller patches (128) are faster but may miss larger patterns
+- Models are trained on 256x256 patches (default)
+
+### Stride Size
+
+<ParamField path="stride_size" type="integer" default="128">
+  Spacing between patch extraction locations. Smaller stride = more overlap = better quality but slower.
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    patch_size=256,
+    stride_size=128  # 50% overlap
+)
+```
+
+**Overlap Calculation:**
+
+Overlap percentage = `(patch_size - stride_size) / patch_size × 100%`
+
+| Patch Size | Stride Size | Overlap | Quality | Speed |
+|------------|-------------|---------|---------|-------|
+| 256 | 256 | 0% | Lower | Fastest |
+| 256 | 128 | 50% | Good | Moderate |
+| 256 | 64 | 75% | Better | Slower |
+| 256 | 32 | 87.5% | Best | Slowest |
+
+<Note>
+  The stride-based patch extraction is implemented in `Segmentation.py:81-89` using the `WSIStridedPatchDataset` class with `sampling_stride` parameter.
+</Note>
+
+## Mask Level Configuration
+
+<ParamField path="mask_level" type="integer" default="-1">
+  Pyramid level to use for mask generation. `-1` uses the highest resolution level.
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    mask_level=-1  # Full resolution
+)
+```
+
+**Level Selection:**
+- `-1` or `0` - Full resolution (slowest, highest quality)
+- `1` - 2x downsampled
+- `2` - 4x downsampled
+- Higher levels - Faster but lower resolution masks
+
+<Warning>
+  Using lower resolution levels (higher numbers) will produce coarser segmentation masks. Only use this for very large slides where memory is constrained.
+</Warning>
+
+## Conditional Random Fields (CRF)
+
+CRF post-processing refines segmentation boundaries using image information.
+
+<ParamField path="crf" type="boolean" default="false">
+  Apply Conditional Random Fields post-processing to refine segmentation edges.
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    crf=True  # Enable CRF post-processing
+)
+```
+
+<Note>
+  CRF post-processing code is present in `Segmentation.py:327-330` but is currently commented out. It uses the `post_process_crf()` helper function.
+</Note>
+
+### When to Use CRF
+
+✅ **Use CRF when:**
+- Segmentation boundaries need to be precise
+- Working with well-stained, high-contrast images
+- Processing time is not critical
+
+❌ **Skip CRF when:**
+- Speed is priority
+- Image quality is poor
+- Boundaries are already clean
+
+## Output Configuration
+
+### Save Paths
+
+<ParamField path="mask_path" type="string" default="../Results">
+  Path where the binary segmentation mask will be saved.
+</ParamField>
+
+<ParamField path="probs_path" type="string" default="../Results">
+  Path where the probability map will be saved (before thresholding).
+</ParamField>
+
+<ParamField path="uncertainty_path" type="string" default="../Results">
+  Path where the uncertainty map (variance across predictions) will be saved.
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='slide.tiff',
+    mask_path='/output/slide_mask.tiff',
+    probs_path='/output/slide_probs.tiff',
+    uncertainty_path='/output/slide_uncertainty.tiff'
+)
+```
+
+### Output Formats
+
+All outputs are saved as pyramidal TIFF files with JPEG compression:
+
+```python
+# Code from Segmentation.py:333-334, 345-346
+tifffile.imsave(probs_path, probs_map['mean'].T, compress=9)
+os.system('convert ' + probs_path + " -compress jpeg -quality 90 -define tiff:tile-geometry=256x256 ptif:"+probs_path)
+```
+
+**Output files:**
+1. **Probability Map** - Continuous values [0-255] representing segmentation confidence
+2. **Binary Mask** - Thresholded mask (0 or 255) based on threshold=0.3
+3. **Uncertainty Map** - Variance across predictions, indicating confidence
+
+## Complete Configuration Example
+
+```python Advanced Configuration
+from DigiPathAI.Segmentation import getSegmentation
+
+getSegmentation(
+    # Input
+    img_path='/data/slides/patient001.tiff',
+    
+    # Model configuration
+    model='dense',              # DenseNet architecture
+    quick=True,                 # Single model (faster)
+    mode='colon',              # Tissue type: 'colon', 'liver', or 'breast'
+    
+    # Patch extraction
+    patch_size=256,            # 256x256 pixel patches
+    stride_size=128,           # 50% overlap
+    mask_level=-1,             # Full resolution
+    
+    # Processing parameters
+    batch_size=32,             # GPU batch size
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_180'],  # 2 augmentations
+    crf=False,                 # Skip CRF post-processing
+    
+    # Output paths
+    mask_path='/output/patient001_mask.tiff',
+    probs_path='/output/patient001_probs.tiff',
+    uncertainty_path='/output/patient001_uncertainty.tiff'
+)
+```
+
+## Tissue Type Modes
+
+<ParamField path="mode" type="string" default="colon">
+  Tissue type for segmentation. Determines which pre-trained models to load.
+  
+  **Options:**
+  - `colon` - Colorectal cancer (DigestPath dataset)
+  - `liver` - Liver cancer (PAIP dataset)
+  - `breast` - Breast cancer metastases (Camelyon dataset)
+</ParamField>
+
+```python
+getSegmentation(
+    img_path='liver_slide.tiff',
+    mode='liver'  # Use liver-specific models
+)
+```
+
+<Note>
+  Model paths are configured in `Segmentation.py:232-278`. Each tissue type has three model variants (inception, deeplabv3, densenet) automatically downloaded on first use.
+</Note>
+
+## Performance Optimization
+
+### For Speed
+
+```python Fast Configuration
+getSegmentation(
+    img_path='slide.tiff',
+    quick=True,              # Single model
+    model='dense',          # Fastest model
+    batch_size=64,          # Larger batch (if GPU memory allows)
+    stride_size=256,        # No overlap
+    patch_size=256,         
+    tta_list=None,          # No augmentation
+    crf=False               # No post-processing
+)
+```
+
+### For Quality
+
+```python Quality Configuration
+getSegmentation(
+    img_path='slide.tiff',
+    quick=False,            # Ensemble of 3 models
+    batch_size=16,          # Smaller batch for stability
+    stride_size=64,         # 75% overlap
+    patch_size=256,
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90', 'ROTATE_180', 'ROTATE_270'],
+    crf=True                # Enable post-processing
+)
+```
+
+## Troubleshooting
+
+<Accordion title="ValueError: Unknown model provided">
+  Ensure `model` parameter is one of: `'dense'`, `'inception'`, or `'deeplabv3'`.
+  
+  Source: `Segmentation.py:300`
+</Accordion>
+
+<Accordion title="ValueError: Unknown mode found">
+  Ensure `mode` parameter is one of: `'colon'`, `'liver'`, or `'breast'`.
+  
+  Source: `Segmentation.py:230`
+</Accordion>
+
+<Accordion title="Segmentation quality is poor">
+  1. Try ensemble mode (`quick=False`)
+  2. Enable test-time augmentation
+  3. Reduce stride for more overlap
+  4. Ensure correct tissue type mode is selected
+</Accordion>
+
+<Accordion title="Processing is very slow">
+  1. Use single model mode (`quick=True`)
+  2. Disable TTA (`tta_list=None`)
+  3. Increase stride to reduce patches
+  4. Increase batch size if GPU memory allows
+  5. Use lower mask level for coarser results
+</Accordion>
+
+## Source Reference
+
+Advanced configuration parameters are defined in:
+- `Segmentation.py:192-225` - `getSegmentation()` function signature
+- `Segmentation.py:65-76` - `get_prediction()` function signature  
+- `Segmentation.py:287-300` - Model selection logic
+- `Segmentation.py:95-99` - TTA list processing

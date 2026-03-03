@@ -1,0 +1,389 @@
+---
+title: 'DeepLabv3+ with Xception'
+description: 'DeepLabv3+ with Xception backbone and Atrous Spatial Pyramid Pooling'
+icon: 'layer-group'
+---
+
+## Architecture Overview
+
+DeepLabv3+ is a state-of-the-art semantic segmentation architecture that combines atrous (dilated) convolutions with an encoder-decoder structure for accurate segmentation.
+
+### Key Features
+
+- **Backbone**: Xception with modified stride
+- **ASPP**: Atrous Spatial Pyramid Pooling for multi-scale context
+- **Output stride**: OS=16 for balance between accuracy and efficiency
+- **Atrous rates**: [6, 12, 18] for multi-scale features
+- **Pretrained**: Pascal VOC dataset (84.56% mIOU)
+- **Output**: 2-class segmentation with softmax
+
+## Atrous Spatial Pyramid Pooling (ASPP)
+
+ASPP captures multi-scale context by applying parallel atrous convolutions with different dilation rates:
+
+```python models/deeplabv3.py (371-413)
+# Branching for Atrous Spatial Pyramid Pooling
+
+# Image Feature branch
+shape_before = tf.shape(x)
+b4 = GlobalAveragePooling2D()(x)
+b4 = Lambda(lambda x: K.expand_dims(x, 1))(b4)
+b4 = Lambda(lambda x: K.expand_dims(x, 1))(b4)
+b4 = Conv2D(256, (1, 1), padding='same',
+            use_bias=False, name='image_pooling')(b4)
+b4 = BatchNormalization(name='image_pooling_BN', epsilon=1e-5)(b4)
+b4 = Activation('relu')(b4)
+size_before = tf.keras.backend.int_shape(x)
+b4 = Lambda(lambda x: tf.compat.v1.image.resize(x, size_before[1:3],
+                                                method='bilinear', align_corners=True))(b4)
+
+# Simple 1x1
+b0 = Conv2D(256, (1, 1), padding='same', use_bias=False, name='aspp0')(x)
+b0 = BatchNormalization(name='aspp0_BN', epsilon=1e-5)(b0)
+b0 = Activation('relu', name='aspp0_activation')(b0)
+
+# Xception backbone has 3 atrous rates
+if backbone == 'xception':
+    # rate = 6 (12)
+    b1 = SepConv_BN(x, 256, 'aspp1',
+                    rate=atrous_rates[0], depth_activation=True, epsilon=1e-5)
+    # rate = 12 (24)
+    b2 = SepConv_BN(x, 256, 'aspp2',
+                    rate=atrous_rates[1], depth_activation=True, epsilon=1e-5)
+    # rate = 18 (36)
+    b3 = SepConv_BN(x, 256, 'aspp3',
+                    rate=atrous_rates[2], depth_activation=True, epsilon=1e-5)
+
+    # Concatenate ASPP branches & project
+    x = Concatenate()([b4, b0, b1, b2, b3])
+```
+
+### ASPP Components
+
+<Tabs>
+  <Tab title="5 Parallel Branches">
+    **Image-level features (b4):**
+    - Global Average Pooling
+    - 1×1 Conv → 256 filters
+    - Bilinear upsample to original size
+    
+    **1×1 Convolution (b0):**
+    - Captures point-wise features
+    - 256 filters
+    
+    **Atrous Conv rate=6 (b1):**
+    - Separable conv with dilation=6
+    - 256 filters
+    
+    **Atrous Conv rate=12 (b2):**
+    - Separable conv with dilation=12
+    - 256 filters
+    
+    **Atrous Conv rate=18 (b3):**
+    - Separable conv with dilation=18
+    - 256 filters
+  </Tab>
+  
+  <Tab title="Receptive Fields">
+    Different atrous rates capture context at different scales:
+    
+    | Branch | Atrous Rate | Effective RF | Use Case |
+    |--------|-------------|--------------|----------|
+    | b4 | - | Global | Entire image context |
+    | b0 | 1 | 1×1 | Local features |
+    | b1 | 6 | ~13×13 | Small structures |
+    | b2 | 12 | ~25×25 | Medium structures |
+    | b3 | 18 | ~37×37 | Large structures |
+  </Tab>
+</Tabs>
+
+## Xception Backbone
+
+Modified Xception architecture serves as the encoder:
+
+```python models/deeplabv3.py (273-314)
+if backbone == 'xception':
+    if OS == 8:
+        entry_block3_stride = 1
+        middle_block_rate = 2
+        exit_block_rates = (2, 4)
+        atrous_rates = (12, 24, 36)
+    else:  # OS == 16
+        entry_block3_stride = 2
+        middle_block_rate = 1
+        exit_block_rates = (1, 2)
+        atrous_rates = (6, 12, 18)
+
+    x = Conv2D(32, (3, 3), strides=(2, 2),
+               name='entry_flow_conv1_1', use_bias=False, padding='same')(img_input)
+    x = BatchNormalization(name='entry_flow_conv1_1_BN')(x)
+    x = Activation('relu')(x)
+
+    x = _conv2d_same(x, 64, 'entry_flow_conv1_2', kernel_size=3, stride=1)
+    x = BatchNormalization(name='entry_flow_conv1_2_BN')(x)
+    x = Activation('relu')(x)
+
+    x = _xception_block(x, [128, 128, 128], 'entry_flow_block1',
+                        skip_connection_type='conv', stride=2,
+                        depth_activation=False)
+    x, skip1 = _xception_block(x, [256, 256, 256], 'entry_flow_block2',
+                               skip_connection_type='conv', stride=2,
+                               depth_activation=False, return_skip=True)
+
+    x = _xception_block(x, [728, 728, 728], 'entry_flow_block3',
+                        skip_connection_type='conv', stride=entry_block3_stride,
+                        depth_activation=False)
+    for i in range(16):
+        x = _xception_block(x, [728, 728, 728], 'middle_flow_unit_{}'.format(i + 1),
+                            skip_connection_type='sum', stride=1, rate=middle_block_rate,
+                            depth_activation=False)
+
+    x = _xception_block(x, [728, 1024, 1024], 'exit_flow_block1',
+                        skip_connection_type='conv', stride=1, rate=exit_block_rates[0],
+                        depth_activation=False)
+    x = _xception_block(x, [1536, 1536, 2048], 'exit_flow_block2',
+                        skip_connection_type='none', stride=1, rate=exit_block_rates[1],
+                        depth_activation=True)
+```
+
+### Xception Structure
+
+| Flow | Blocks | Output Stride | Atrous Rate | Filters |
+|------|--------|---------------|-------------|----------|
+| Entry | 3 | 2, 2, 2 (OS=8) or 1 (OS=16) | 1 | 128→256→728 |
+| Middle | 16 | 1 | 1 (OS=16) or 2 (OS=8) | 728 |
+| Exit | 2 | 1 | 1,2 (OS=16) or 2,4 (OS=8) | 1024→2048 |
+
+## Depthwise Separable Convolution
+
+Core building block for efficient atrous convolutions:
+
+```python models/deeplabv3.py (52-89)
+def SepConv_BN(x, filters, prefix, stride=1, kernel_size=3, rate=1, depth_activation=False, epsilon=1e-3):
+    """ SepConv with BN between depthwise & pointwise. Optionally add activation after BN
+        Implements right "same" padding for even kernel sizes
+        Args:
+            x: input tensor
+            filters: num of filters in pointwise convolution
+            prefix: prefix before name
+            stride: stride at depthwise conv
+            kernel_size: kernel size for depthwise convolution
+            rate: atrous rate for depthwise convolution
+            depth_activation: flag to use activation between depthwise & poinwise convs
+            epsilon: epsilon to use in BN layer
+    """
+
+    if stride == 1:
+        depth_padding = 'same'
+    else:
+        kernel_size_effective = kernel_size + (kernel_size - 1) * (rate - 1)
+        pad_total = kernel_size_effective - 1
+        pad_beg = pad_total // 2
+        pad_end = pad_total - pad_beg
+        x = ZeroPadding2D((pad_beg, pad_end))(x)
+        depth_padding = 'valid'
+
+    if not depth_activation:
+        x = Activation('relu')(x)
+    x = DepthwiseConv2D((kernel_size, kernel_size), strides=(stride, stride), dilation_rate=(rate, rate),
+                        padding=depth_padding, use_bias=False, name=prefix + '_depthwise')(x)
+    x = BatchNormalization(name=prefix + '_depthwise_BN', epsilon=epsilon)(x)
+    if depth_activation:
+        x = Activation('relu')(x)
+    x = Conv2D(filters, (1, 1), padding='same',
+               use_bias=False, name=prefix + '_pointwise')(x)
+    x = BatchNormalization(name=prefix + '_pointwise_BN', epsilon=epsilon)(x)
+    if depth_activation:
+        x = Activation('relu')(x)
+
+    return x
+```
+
+**Benefits:**
+- **Parameter reduction**: ~9× fewer parameters than standard conv
+- **Atrous support**: Efficient dilation for multi-scale features
+- **Computational efficiency**: Separates spatial and channel-wise convolutions
+
+## Decoder Architecture
+
+Decoder refines segmentation with skip connections:
+
+```python models/deeplabv3.py (416-433)
+if backbone == 'xception':
+    # Feature projection
+    # x4 (x2) block
+    size_before2 = tf.keras.backend.int_shape(x)
+    x = Lambda(lambda xx: tf.compat.v1.image.resize(xx,
+                                                    size_before2[1:3] * tf.constant(OS // 4),
+                                                    method='bilinear', align_corners=True))(x)
+
+    dec_skip1 = Conv2D(48, (1, 1), padding='same',
+                       use_bias=False, name='feature_projection0')(skip1)
+    dec_skip1 = BatchNormalization(
+        name='feature_projection0_BN', epsilon=1e-5)(dec_skip1)
+    dec_skip1 = Activation('relu')(dec_skip1)
+    x = Concatenate()([x, dec_skip1])
+    x = SepConv_BN(x, 256, 'decoder_conv0',
+                   depth_activation=True, epsilon=1e-5)
+    x = SepConv_BN(x, 256, 'decoder_conv1',
+                   depth_activation=True, epsilon=1e-5)
+```
+
+## Complete Model Function
+
+```python models/deeplabv3.py (219-220)
+def Deeplabv3(weights='came', input_tensor=None, input_shape=(512, 512, 3), 
+              classes=21, backbone='xception', OS=16, alpha=1., activation=None):
+    """ Instantiates the Deeplabv3+ architecture
+
+    Optionally loads weights pre-trained on PASCAL VOC or Cityscapes.
+    
+    # Arguments
+        weights: 'pascal_voc', 'cityscapes', or None
+        input_shape: shape of input image (H, W, C)
+        classes: number of desired classes
+        backbone: 'xception' or 'mobilenetv2'
+        OS: output stride, one of {8,16}
+        activation: 'softmax', 'sigmoid', or None
+    """
+```
+
+### Parameters
+
+| Parameter | Options | Default | Description |
+|-----------|---------|---------|-------------|
+| `weights` | `'pascal_voc'`, `'cityscapes'`, `None` | `'came'` | Pretrained weights |
+| `input_shape` | `(H, W, 3)` | `(512, 512, 3)` | Input image size |
+| `classes` | Integer | `21` | Number of output classes |
+| `backbone` | `'xception'`, `'mobilenetv2'` | `'xception'` | Encoder architecture |
+| `OS` | `8`, `16` | `16` | Output stride |
+| `activation` | `'softmax'`, `'sigmoid'`, `None` | `None` | Final activation |
+
+## Output Stride (OS) Configuration
+
+<Tabs>
+  <Tab title="OS=16 (Default)">
+    **Configuration:**
+    - Entry block 3 stride: 2
+    - Middle block rate: 1
+    - Exit block rates: (1, 2)
+    - Atrous rates: (6, 12, 18)
+    
+    **Advantages:**
+    - Faster inference
+    - Lower memory usage
+    - Good accuracy/speed tradeoff
+    
+    **Best for:** Real-time applications
+  </Tab>
+  
+  <Tab title="OS=8">
+    **Configuration:**
+    - Entry block 3 stride: 1
+    - Middle block rate: 2
+    - Exit block rates: (2, 4)
+    - Atrous rates: (12, 24, 36)
+    
+    **Advantages:**
+    - Higher spatial resolution
+    - Better boundary accuracy
+    - Improved small object detection
+    
+    **Best for:** High-accuracy requirements
+  </Tab>
+</Tabs>
+
+## Pretrained Weights
+
+### Pascal VOC Performance
+
+Original DeepLabv3+ achieves **84.56% mIOU** on Pascal VOC validation set.
+
+### Available Weights
+
+```python models/deeplabv3.py (46-49)
+WEIGHTS_PATH_X = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_xception_tf_dim_ordering_tf_kernels.h5"
+WEIGHTS_PATH_MOBILE = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_mobilenetv2_tf_dim_ordering_tf_kernels.h5"
+WEIGHTS_PATH_X_CS = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.2/deeplabv3_xception_tf_dim_ordering_tf_kernels_cityscapes.h5"
+WEIGHTS_PATH_MOBILE_CS = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.2/deeplabv3_mobilenetv2_tf_dim_ordering_tf_kernels_cityscapes.h5"
+```
+
+### DigiPathAI Weights
+
+- **digestpath_deeplabv3.h5**: Fine-tuned for DigestPath
+- **paip_deeplabv3.h5**: Fine-tuned for PAIP
+- **camelyon_deeplabv3.h5**: Fine-tuned for Camelyon
+
+## Input/Output Specifications
+
+### Input
+- **Shape**: `(batch, height, width, 3)`
+- **Default size**: 512×512 pixels
+- **Preprocessing**: TensorFlow mode normalization
+- **Range**: [0, 255] RGB values
+
+### Output
+- **Shape**: `(batch, height, width, classes)`
+- **Classes**: 2 for DigiPathAI (background, tissue)
+- **Activation**: Softmax probabilities
+
+<Note>
+  DeepLabv3+ excels at capturing multi-scale context through ASPP while maintaining precise boundaries through its encoder-decoder structure with skip connections.
+</Note>
+
+## Usage Example
+
+```python
+from DigiPathAI.models.deeplabv3 import Deeplabv3
+from DigiPathAI.helpers.utils import load_trained_models
+
+# Create model architecture
+model = Deeplabv3(
+    input_shape=(256, 256, 3),
+    classes=2,
+    backbone='xception',
+    weights='pascal_voc',
+    OS=16,
+    activation='softmax'
+)
+
+# Load DigiPathAI weights
+model = load_trained_models(
+    model='deeplabv3',
+    path='~/.DigiPathAI/digestpath_models/digestpath_deeplabv3.h5',
+    patch_size=256
+)
+
+# Predict
+import numpy as np
+image = np.random.rand(1, 256, 256, 3) * 255
+prediction = model.predict(image)
+```
+
+## Advantages for Pathology
+
+### Multi-Scale Context
+- **ASPP**: Captures features at 5 different scales
+- **Global pooling**: Incorporates entire image context
+- **Atrous convolutions**: Large receptive fields without downsampling
+
+### Computational Efficiency
+- **Depthwise separable**: Reduces parameters and computation
+- **OS=16**: Balances accuracy and speed
+- **Shared encoder**: Efficient multi-scale processing
+
+### Accurate Boundaries
+- **Decoder refinement**: 4× upsampling with skip connections
+- **Low-level features**: Preserves spatial details
+- **Bilinear upsampling**: Smooth boundary reconstruction
+
+## Related Models
+
+<CardGroup cols={2}>
+  <Card title="DenseNet U-Net" icon="sitemap" href="/models/densenet">
+    Dense connectivity for feature reuse
+  </Card>
+  <Card title="Inception-ResNet" icon="network-wired" href="/models/inception">
+    Multi-scale Inception blocks
+  </Card>
+</CardGroup>

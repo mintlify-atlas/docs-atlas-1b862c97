@@ -1,0 +1,164 @@
+---
+title: 'Breast Cancer Segmentation'
+description: 'Camelyon dataset models for metastatic breast cancer detection'
+icon: 'circle'
+---
+
+## Overview
+
+DigiPathAI provides specialized models for breast cancer metastasis detection, trained on the Camelyon (Cancer Metastases in Lymph Nodes) dataset. These models identify metastatic regions in lymph node sections.
+
+## Camelyon Dataset
+
+The Camelyon dataset contains whole slide images of lymph node sections with annotations for breast cancer metastases. The model ensemble includes:
+
+<CardGroup cols={3}>
+  <Card title="Inception" icon="brain">
+    Multi-scale analysis for metastatic patterns
+  </Card>
+  
+  <Card title="DenseNet" icon="network-wired">
+    Efficient feature propagation for detection
+  </Card>
+  
+  <Card title="DeepLabV3" icon="border-all">
+    Precise metastasis boundary segmentation
+  </Card>
+</CardGroup>
+
+## Model Details
+
+The breast cancer models are automatically managed by DigiPathAI:
+
+```python
+# From Segmentation.py lines 264-278
+elif mode == 'breast':
+    path = os.path.join(home, '.DigiPathAI/camelyon_models')
+    if (not os.path.exists(os.path.join(path, 'camelyon_inception.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'camelyon_deeplabv3.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'camelyon_densenet.h5'))):
+        if status is not None: status['status'] = "Downloading Trained Models"
+        download_camelyon() 
+        model_path_inception = os.path.join(path, 'camelyon_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'camelyon_deeplabv3.h5')
+        model_path_densenet = os.path.join(path, 'camelyon_densenet.h5')
+    else :
+        if status is not None: status['status'] = "Found Trained Models, Skipping download"
+        model_path_inception = os.path.join(path, 'camelyon_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'camelyon_deeplabv3.h5')
+        model_path_densenet  = os.path.join(path, 'camelyon_densenet.h5')
+```
+
+<Note>
+Models are stored in `~/.DigiPathAI/camelyon_models/` and include:
+- `camelyon_inception.h5`
+- `camelyon_deeplabv3.h5`
+- `camelyon_densenet.h5`
+</Note>
+
+## Usage Example
+
+### Basic Breast Metastasis Detection
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Detect metastatic regions in lymph node
+prediction = getSegmentation(
+    img_path='lymph_node_slide.tiff',
+    mode='breast',
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=False  # Use ensemble of all three models
+)
+```
+
+### Quick Mode (Single Model)
+
+```python
+# Use only Inception for faster screening
+prediction = getSegmentation(
+    img_path='lymph_node_slide.tiff',
+    mode='breast',
+    model='inception',
+    quick=True
+)
+```
+
+### High-Sensitivity Detection
+
+```python
+# Maximize detection with TTA and ensemble
+prediction = getSegmentation(
+    img_path='lymph_node_slide.tiff',
+    mode='breast',
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90', 'ROTATE_180'],
+    quick=False,
+    stride_size=64  # Increased overlap for better coverage
+)
+```
+
+<Tip>
+For lymph node metastasis detection, use ensemble mode (`quick=False`) with test-time augmentation to maximize sensitivity, especially for small metastatic foci.
+</Tip>
+
+## Parameters
+
+| Parameter | Description | Default | Breast-Specific Notes |
+|-----------|-------------|---------|---------------------|
+| `mode` | Tissue type | - | Must be set to `'breast'` |
+| `model` | Architecture choice | `'dense'` | Options: 'dense', 'inception', 'deeplabv3' |
+| `quick` | Single vs ensemble | `True` | Set to `False` for ensemble |
+| `patch_size` | Inference patch size | `256` | Recommended: 256 for metastasis detection |
+| `stride_size` | Sliding window stride | `128` | Use 64 for higher sensitivity |
+| `batch_size` | Batch size for inference | `32` | Adjust based on GPU memory |
+
+## Output
+
+The segmentation provides comprehensive metastasis analysis:
+
+1. **Probability Map** - Continuous probability values for metastatic likelihood
+2. **Binary Mask** - Thresholded segmentation (threshold=0.3) of metastatic regions
+3. **Uncertainty Map** - Model variance for quality assessment
+
+```python
+# Outputs optimized for clinical review
+prediction = getSegmentation(
+    img_path='lymph_node.tiff',
+    mode='breast',
+    probs_path='./metastasis_probability.tiff',
+    mask_path='./metastasis_mask.tiff',
+    uncertainty_path='./metastasis_uncertainty.tiff'
+)
+```
+
+## Clinical Applications
+
+- **Sentinel Lymph Node Screening**: Rapid detection of metastases
+- **Micrometastasis Detection**: Identify small metastatic foci (less than 2mm)
+- **Macrometastasis Quantification**: Measure extent of large metastases
+- **Quality Assurance**: Uncertainty maps highlight areas needing pathologist review
+- **Research**: Correlate metastatic burden with patient outcomes
+
+## Detection Thresholds
+
+The default threshold (0.3) balances sensitivity and specificity. Adjust based on your use case:
+
+```python
+# For screening (higher sensitivity)
+# Use lower threshold or probability map directly
+
+# For confirmation (higher specificity)  
+# Use default threshold (0.3) with ensemble mode
+```
+
+<Note>
+The Camelyon models are trained on lymph node sections and optimized for detecting breast cancer metastases. Performance on other tissue types may vary.
+</Note>
+
+## Related
+
+- [Colon Cancer Segmentation](/tissue-types/colon) - DigestPath models
+- [Liver Cancer Segmentation](/tissue-types/liver) - PAIP models
+- [API Reference](/api/segmentation) - Full parameter documentation

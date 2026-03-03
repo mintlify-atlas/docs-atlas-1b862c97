@@ -1,0 +1,149 @@
+---
+title: 'Liver Cancer Segmentation'
+description: 'PAIP dataset models for hepatocellular carcinoma analysis'
+icon: 'circle'
+---
+
+## Overview
+
+DigiPathAI provides specialized models for liver cancer segmentation, trained on the PAIP (Pathology AI Platform) dataset. These models detect and segment viable tumor regions in hepatocellular carcinoma whole slide images.
+
+## PAIP Dataset
+
+The PAIP dataset contains annotated liver cancer histopathology slides from hepatocellular carcinoma cases. The model ensemble includes:
+
+<CardGroup cols={3}>
+  <Card title="Inception" icon="brain">
+    Multi-scale feature extraction for liver tissue patterns
+  </Card>
+  
+  <Card title="DenseNet" icon="network-wired">
+    Dense connections for robust feature learning
+  </Card>
+  
+  <Card title="DeepLabV3" icon="border-all">
+    Accurate tumor boundary delineation
+  </Card>
+</CardGroup>
+
+## Model Details
+
+The liver cancer models are automatically managed by DigiPathAI:
+
+```python
+# From Segmentation.py lines 248-262
+elif mode == 'liver':
+    path = os.path.join(home, '.DigiPathAI/paip_models')
+    if (not os.path.exists(os.path.join(path, 'paip_inception.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'paip_deeplabv3.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'paip_densenet.h5'))):
+        if status is not None: status['status'] = "Downloading Trained Models"
+        download_paip() 
+        model_path_inception = os.path.join(path, 'paip_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'paip_deeplabv3.h5')
+        model_path_densenet  = os.path.join(path, 'paip_densenet.h5')
+    else :
+        if status is not None: status['status'] = "Found Trained Models, Skipping download"
+        model_path_inception = os.path.join(path, 'paip_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'paip_deeplabv3.h5')
+        model_path_densenet  = os.path.join(path, 'paip_densenet.h5')
+```
+
+<Note>
+Models are stored in `~/.DigiPathAI/paip_models/` and include:
+- `paip_inception.h5`
+- `paip_deeplabv3.h5`
+- `paip_densenet.h5`
+</Note>
+
+## Usage Example
+
+### Basic Liver Segmentation
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Segment liver cancer tissue
+prediction = getSegmentation(
+    img_path='liver_slide.tiff',
+    mode='liver',
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=False  # Use ensemble of all three models
+)
+```
+
+### Quick Mode (Single Model)
+
+```python
+# Use only DeepLabV3 for faster inference
+prediction = getSegmentation(
+    img_path='liver_slide.tiff',
+    mode='liver',
+    model='deeplabv3',
+    quick=True
+)
+```
+
+### With Custom Paths
+
+```python
+# Specify output paths for results
+prediction = getSegmentation(
+    img_path='liver_slide.tiff',
+    mode='liver',
+    probs_path='./results/liver_probs.tiff',
+    mask_path='./results/liver_mask.tiff',
+    uncertainty_path='./results/liver_uncertainty.tiff',
+    quick=False
+)
+```
+
+<Tip>
+For hepatocellular carcinoma analysis, the ensemble mode (`quick=False`) provides more reliable tumor boundary detection and better handles tissue heterogeneity.
+</Tip>
+
+## Parameters
+
+| Parameter | Description | Default | Liver-Specific Notes |
+|-----------|-------------|---------|---------------------|
+| `mode` | Tissue type | - | Must be set to `'liver'` |
+| `model` | Architecture choice | `'dense'` | Options: 'dense', 'inception', 'deeplabv3' |
+| `quick` | Single vs ensemble | `True` | Set to `False` for ensemble |
+| `patch_size` | Inference patch size | `256` | Recommended: 256 for liver |
+| `stride_size` | Sliding window stride | `128` | Smaller values = more overlap |
+| `batch_size` | Batch size for inference | `32` | Adjust based on GPU memory |
+
+## Output
+
+The segmentation returns three files for comprehensive tumor analysis:
+
+1. **Probability Map** - Continuous probability values indicating tumor likelihood
+2. **Binary Mask** - Thresholded segmentation (threshold=0.3) for viable tumor regions
+3. **Uncertainty Map** - Model variance for assessing prediction confidence
+
+```python
+# All outputs are saved as pyramidal TIFF files
+# Optimized for viewing in digital pathology viewers
+prediction = getSegmentation(
+    img_path='liver_slide.tiff',
+    mode='liver',
+    probs_path='./liver_probability.tiff',
+    mask_path='./liver_mask.tiff',
+    uncertainty_path='./liver_uncertainty.tiff'
+)
+```
+
+## Clinical Applications
+
+- **Viable Tumor Quantification**: Measure tumor area percentage
+- **Treatment Response**: Compare pre/post-treatment tumor regions
+- **Research**: Correlate tumor morphology with outcomes
+- **Quality Control**: Use uncertainty maps to identify challenging regions
+
+## Related
+
+- [Colon Cancer Segmentation](/tissue-types/colon) - DigestPath models
+- [Breast Cancer Segmentation](/tissue-types/breast) - Camelyon models
+- [API Reference](/api/segmentation) - Full parameter documentation

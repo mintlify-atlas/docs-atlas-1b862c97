@@ -1,0 +1,152 @@
+---
+title: 'Python API Overview'
+description: 'Learn how to use DigiPathAI programmatically for tissue segmentation'
+icon: 'code'
+---
+
+## Introduction
+
+DigiPathAI provides a Python API for programmatic access to its tissue segmentation capabilities. The API allows you to integrate whole slide image (WSI) analysis directly into your workflows without using the web interface.
+
+## Import Structure
+
+The main functions are available from the `DigiPathAI.Segmentation` module:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation, get_prediction
+```
+
+## Main Entry Points
+
+DigiPathAI provides two primary functions for tissue analysis:
+
+### getSegmentation
+
+The high-level function for complete tissue segmentation. This is the recommended entry point for most use cases.
+
+```python
+prediction = getSegmentation(
+    img_path,
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=True,
+    mode='colon'
+)
+```
+
+**Use when:** You need a complete end-to-end segmentation with model loading, inference, and post-processing.
+
+### get_prediction
+
+A lower-level function for patch-based prediction with custom models. Provides more control over the inference process.
+
+```python
+img, probs_map = get_prediction(
+    wsi_path,
+    batch_size=64,
+    models=custom_models,
+    patch_size=256,
+    stride_size=256
+)
+```
+
+**Use when:** You need fine-grained control over model selection or want to use custom trained models.
+
+## Basic Usage Pattern
+
+Here's a typical workflow using the Python API:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Perform tissue segmentation
+prediction = getSegmentation(
+    img_path='path/to/slide.tiff',
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=True,
+    tta_list=None,
+    crf=False,
+    mode='colon'
+)
+
+# prediction is a numpy array containing the segmentation mask
+print(f"Prediction shape: {prediction.shape}")
+print(f"Unique values: {np.unique(prediction)}")
+```
+
+<Note>
+  The `quick=True` parameter uses a single model for faster inference. Set `quick=False` to ensemble 4 different models for higher accuracy.
+</Note>
+
+## Return Types and Data Structures
+
+### getSegmentation Return Value
+
+Returns a **numpy array** containing the binary segmentation mask:
+
+- **Shape:** `(height, width)` matching the WSI dimensions at the highest resolution
+- **Data type:** `float32` or `uint8`
+- **Values:** 
+  - `255` = tissue (positive prediction)
+  - `0` = background (negative prediction)
+
+```python
+prediction = getSegmentation(img_path, mode='colon')
+# prediction.shape = (10000, 15000)  # Example dimensions
+# prediction.dtype = numpy.float32
+# Unique values: [0, 255]
+```
+
+### get_prediction Return Value
+
+Returns a **tuple** of `(image, probs_map)`:
+
+```python
+img, probs_map = get_prediction(wsi_path, models=models)
+```
+
+**Components:**
+- `img`: The original WSI as a numpy array
+- `probs_map`: Dictionary containing prediction statistics
+  - `probs_map['mean']`: Mean probability map across all models/augmentations
+  - `probs_map['var']`: Variance (uncertainty) map
+
+<ResponseField name="probs_map" type="dict">
+  Dictionary containing probability maps with mean and variance
+  
+  <ResponseField name="mean" type="numpy.memmap">
+    Mean probability map. Values range from 0.0 to 1.0, where higher values indicate stronger tissue predictions.
+  </ResponseField>
+  
+  <ResponseField name="var" type="numpy.memmap">
+    Variance map representing prediction uncertainty. Higher values indicate less confident predictions.
+  </ResponseField>
+</ResponseField>
+
+## Performance Considerations
+
+<Warning>
+  Processing whole slide images requires significant GPU memory. Monitor your GPU usage and adjust `batch_size` accordingly.
+</Warning>
+
+**Key parameters affecting performance:**
+
+- **batch_size**: Higher values = faster processing but more GPU memory
+- **patch_size**: Larger patches = fewer iterations but more memory per patch
+- **stride_size**: Smaller strides = more overlap and better quality but slower processing
+- **quick**: `True` = single model (fast), `False` = 4-model ensemble (slow but accurate)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="getSegmentation Function" icon="function" href="/api/segmentation">
+    Detailed documentation for the main segmentation function
+  </Card>
+  
+  <Card title="Parameter Reference" icon="sliders" href="/api/parameters">
+    Complete reference for all function parameters
+  </Card>
+</CardGroup>

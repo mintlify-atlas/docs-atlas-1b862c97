@@ -1,0 +1,252 @@
+---
+title: Web Interface Guide
+description: Complete guide to using DigiPathAI's Flask-based web interface for WSI visualization and segmentation
+---
+
+The DigiPathAI web interface provides an intuitive way to visualize whole slide images (WSI) and perform tissue segmentation through a browser-based application.
+
+## Overview
+
+The web interface is built with Flask and OpenSeadragon, offering:
+
+- **Deep Zoom visualization** for high-resolution WSI viewing
+- **File browser** for navigating slide collections
+- **Interactive segmentation controls** for tissue analysis
+- **Real-time progress monitoring** during segmentation
+- **Overlay visualization** for masks and uncertainty maps
+
+## Starting the Server
+
+Launch the web server with the following command:
+
+```bash
+python -m DigiPathAI.main_server -s <slide_directory> -p 8080
+```
+
+### Server Options
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `-s, --slide_dir` | Directory containing WSI images | Current directory |
+| `-p, --port` | Port to listen on | 8080 |
+| `-l, --listen` | Address to listen on | 127.0.0.1 |
+| `--viewer-only` | Disable segmentation (view-only mode) | False |
+| `-Q, --quality` | JPEG compression quality for tiles | 75 |
+| `-S, --size` | Tile size in pixels | 254 |
+| `-e, --overlap` | Overlap of adjacent tiles | 1 |
+
+<Tip>
+  Use `--viewer-only` mode when GPU is not available or you only need to view pre-generated segmentations.
+</Tip>
+
+## File Browser
+
+The home page displays a hierarchical file browser showing all compatible WSI files in the slide directory.
+
+<Steps>
+  <Step title="Navigate directories">
+    The file browser recursively scans the slide directory and displays all subdirectories containing supported slide formats.
+  </Step>
+  
+  <Step title="Identify processed slides">
+    Slides with existing segmentation masks are marked in the file list. The system automatically detects masks with the `-dgai-mask` suffix.
+  </Step>
+  
+  <Step title="Open a slide">
+    Click on any slide filename to open it in the viewer.
+  </Step>
+</Steps>
+
+### Supported Formats
+
+The interface supports any format compatible with OpenSlide, including:
+- `.svs` (Aperio)
+- `.tiff`, `.tif` (Generic TIFF/BigTIFF)
+- `.ndpi` (Hamamatsu)
+- `.vms`, `.vmu` (Hamamatsu VMU)
+- `.scn` (Leica)
+- `.mrxs` (MIRAX)
+- `.bif` (Ventana)
+
+## Image Viewer Features
+
+### Deep Zoom Navigation
+
+The viewer uses OpenSeadragon's Deep Zoom technology for smooth navigation of high-resolution images.
+
+**Navigation Controls:**
+- **Mouse wheel**: Zoom in/out (2x per scroll)
+- **Click and drag**: Pan across the image
+- **Double-click**: Zoom in to that location
+- **Home button**: Reset to initial view
+
+**Configuration Details:**
+
+```javascript
+// Viewer settings from viewer.html
+animationTime: 0.5      // Smooth zoom transitions
+blendTime: 0.1          // Tile blend duration
+zoomPerScroll: 2        // 2x zoom per scroll
+minZoomLevel: 8         // Skip lowest resolution levels
+```
+
+<Note>
+  The viewer automatically skips the lowest 8 resolution levels to improve load times. This is configurable in the viewer settings.
+</Note>
+
+### Scale Bar
+
+A calibrated scale bar is displayed when MPP (microns per pixel) metadata is available in the slide:
+
+```javascript
+// Scale bar configuration
+xOffset: 10             // Position from left
+yOffset: 10             // Position from top
+barThickness: 3         // Bar height in pixels
+color: '#555555'        // Bar color
+backgroundColor: 'rgba(255, 255, 255, 0.5)'  // Semi-transparent background
+```
+
+The scale bar automatically adjusts based on the zoom level and slide's MPP metadata.
+
+### Slide Properties Panel
+
+The properties panel displays slide metadata:
+
+- **Dimensions**: Width x Height in pixels
+- **Area**: Total image area (in million/thousand pixels)
+- **MPP**: Microns per pixel (if available)
+
+## Segmentation Controls
+
+### Tissue Type Selection
+
+Before running segmentation, select the appropriate tissue type from the dropdown menu:
+
+<Steps>
+  <Step title="Click the Tissue Type dropdown">
+    Located in the left sidebar, this menu is marked with a red asterisk (*) indicating it's required.
+  </Step>
+  
+  <Step title="Select tissue type">
+    Choose from:
+    - **Colon** - For colorectal tissue segmentation
+    - **Liver** - For liver tissue segmentation
+    - **Breast** - For breast tissue segmentation
+  </Step>
+  
+  <Step title="Click 'Get segmentation'">
+    The button will be disabled until a tissue type is selected.
+  </Step>
+</Steps>
+
+<Warning>
+  You must select a tissue type before running segmentation. The button will remain disabled otherwise.
+</Warning>
+
+### Running Segmentation
+
+When you click "Get segmentation":
+
+1. The system sends a POST request to `/segment` with the selected tissue type
+2. A background thread starts the segmentation process
+3. The button becomes disabled to prevent duplicate runs
+4. Progress updates are fetched every 2 seconds via `/check_segment_status`
+
+### Progress Monitoring
+
+During segmentation, you'll see:
+
+- **Status text**: Current operation (e.g., "Downloading Trained Models", "Running segmentation")
+- **Progress bar**: Percentage completion (0-100%)
+
+Status updates include:
+```json
+{
+  "status": "Running segmentation",
+  "progress": 45,
+  "tissuetype": "colon"
+}
+```
+
+### Mask Overlay Toggle
+
+Once segmentation completes, you can visualize results:
+
+<Accordion title="Show Cancer Regions Toggle">
+  - **Location**: Top of left sidebar
+  - **Function**: Overlays segmentation mask on the original WSI
+  - **Opacity**: 50% blend when enabled
+  - **Shortcut**: Click the switch to toggle on/off
+  
+  The mask overlay shows predicted cancer regions highlighted over the original tissue.
+</Accordion>
+
+<Note>
+  The mask toggle is disabled until segmentation completes. After processing, the page automatically refreshes to enable the overlay controls.
+</Note>
+
+## Viewer-Only Mode
+
+When the server runs with `--viewer-only` flag or when `VIEWER_ONLY=True`:
+
+- Segmentation button shows "Segmentation Disabled"
+- A message "GPU not available" is displayed
+- You can still view pre-existing segmentation masks
+- All navigation and visualization features remain available
+
+## Cache Management
+
+The server implements an LRU cache for opened slides:
+
+```python
+SLIDE_CACHE_SIZE = 10  # Maximum slides in memory
+```
+
+This ensures efficient memory usage when working with multiple large WSI files. The least recently used slides are automatically removed from cache when the limit is reached.
+
+## Deep Zoom Tile Configuration
+
+Tiles are generated with these settings:
+
+```python
+DEEPZOOM_TILE_SIZE = 254       # Tile dimensions
+DEEPZOOM_OVERLAP = 1           # Pixel overlap between tiles
+DEEPZOOM_FORMAT = 'jpeg'       # Tile image format
+DEEPZOOM_TILE_QUALITY = 75     # JPEG compression quality
+DEEPZOOM_LIMIT_BOUNDS = True   # Constrain to slide bounds
+```
+
+These parameters balance image quality, loading speed, and bandwidth usage.
+
+## Troubleshooting
+
+<Accordion title="Slides not appearing in file browser">
+  - Ensure slides are in supported formats (OpenSlide compatible)
+  - Check file permissions in the slide directory
+  - Verify the slide directory path is correct
+  - Files with `-dgai-mask` or `-dgai-uncertainty` suffixes are hidden from the main list
+</Accordion>
+
+<Accordion title="Segmentation button disabled">
+  - Confirm you've selected a tissue type from the dropdown
+  - Check if server is running in viewer-only mode
+  - Verify GPU availability if segmentation is expected
+</Accordion>
+
+<Accordion title="Slow tile loading">
+  - Increase `DEEPZOOM_TILE_QUALITY` for better compression (lower quality)
+  - Check network connection if accessing remotely
+  - Ensure sufficient server memory for the slide cache
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running Segmentation" icon="play" href="/guide/running-segmentation">
+    Learn the detailed workflow for tissue segmentation
+  </Card>
+  <Card title="Understanding Results" icon="chart-simple" href="/guide/understanding-results">
+    Interpret segmentation masks and uncertainty maps
+  </Card>
+</CardGroup>

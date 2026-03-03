@@ -1,0 +1,212 @@
+---
+title: 'Server Configuration'
+description: 'Configure DigiPathAI server settings including host, port, Deep Zoom parameters, and slide directories'
+icon: 'server'
+---
+
+## Overview
+
+The DigiPathAI server provides a web-based interface for viewing whole slide images and running AI-powered segmentation. Server configuration is managed through command-line options when starting `main_server.py`.
+
+## Command-Line Options
+
+All server options can be specified when launching the server:
+
+```bash
+python main_server.py [options]
+```
+
+### Host and Port Configuration
+
+<ParamField path="--listen" type="string" default="127.0.0.1">
+  IP address for the server to listen on. Use `0.0.0.0` to allow external connections.
+  
+  ```bash
+  python main_server.py --listen 0.0.0.0
+  ```
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8080">
+  Port number for the server to listen on.
+  
+  ```bash
+  python main_server.py --port 5000
+  ```
+</ParamField>
+
+### Slide Directory
+
+<ParamField path="--slide_dir" type="string" default=".">
+  Directory containing the whole slide images. Defaults to current directory.
+  
+  ```bash
+  python main_server.py --slide_dir /path/to/slides
+  ```
+</ParamField>
+
+<Note>
+  The slide directory is recursively scanned for compatible whole slide image formats detected by OpenSlide (`.svs`, `.tiff`, `.ndpi`, etc.).
+</Note>
+
+### Deep Zoom Parameters
+
+Deep Zoom configuration controls how whole slide images are tiled and served to the viewer.
+
+<ParamField path="--size" type="integer" default="254">
+  Tile size in pixels for Deep Zoom tiles. Standard value is 254 pixels.
+  
+  ```bash
+  python main_server.py --size 512
+  ```
+</ParamField>
+
+<ParamField path="--overlap" type="integer" default="1">
+  Overlap of adjacent tiles in pixels. Helps ensure smooth viewing transitions.
+  
+  ```bash
+  python main_server.py --overlap 2
+  ```
+</ParamField>
+
+<ParamField path="--quality" type="integer" default="75">
+  JPEG compression quality for tiles (1-100). Higher values produce better quality but larger file sizes.
+  
+  ```bash
+  python main_server.py --quality 90
+  ```
+</ParamField>
+
+<ParamField path="--format" type="string" default="jpeg">
+  Image format for tiles. Allowed values: `jpeg` or `png`.
+  
+  ```bash
+  python main_server.py --format png
+  ```
+</ParamField>
+
+<ParamField path="--ignore-bounds" type="boolean" default="false">
+  Display entire scan area instead of limiting to tissue bounds.
+  
+  ```bash
+  python main_server.py --ignore-bounds
+  ```
+</ParamField>
+
+### Operating Modes
+
+<ParamField path="--viewer-only" type="boolean" default="false">
+  Run in viewer-only mode, disabling AI segmentation functionality. Useful for systems without GPU or when only image viewing is needed.
+  
+  ```bash
+  python main_server.py --viewer-only
+  ```
+</ParamField>
+
+<Warning>
+  When `--viewer-only` is enabled, the segmentation button will be disabled in the web interface. The server will not load AI models or TensorFlow.
+</Warning>
+
+### Additional Options
+
+<ParamField path="--config" type="string">
+  Path to a Python configuration file. Settings in the config file can be overridden by command-line options.
+  
+  ```bash
+  python main_server.py --config myconfig.py
+  ```
+</ParamField>
+
+<ParamField path="--debug" type="boolean" default="false">
+  Run server in debugging mode with auto-reload and detailed error messages.
+  
+  ```bash
+  python main_server.py --debug
+  ```
+</ParamField>
+
+<Warning>
+  Debug mode is insecure and should never be used in production environments.
+</Warning>
+
+## Configuration File
+
+Instead of using command-line options, you can create a Python configuration file:
+
+```python config.py
+# Server configuration
+SLIDE_DIR = '/data/slides'
+VIEWER_ONLY = False
+
+# Deep Zoom settings
+DEEPZOOM_FORMAT = 'jpeg'
+DEEPZOOM_TILE_SIZE = 254
+DEEPZOOM_OVERLAP = 1
+DEEPZOOM_LIMIT_BOUNDS = True
+DEEPZOOM_TILE_QUALITY = 75
+
+# Cache settings
+SLIDE_CACHE_SIZE = 10
+```
+
+Then launch with:
+
+```bash
+python main_server.py --config config.py
+```
+
+## Complete Example
+
+Launch server with custom settings:
+
+```bash
+python main_server.py \
+  --listen 0.0.0.0 \
+  --port 8080 \
+  --slide_dir /data/pathology/slides \
+  --size 256 \
+  --overlap 1 \
+  --quality 85 \
+  --format jpeg
+```
+
+## Default Configuration
+
+The following defaults are defined in `main_server.py` (lines 21-28):
+
+<CodeGroup>
+```python Default Settings
+SLIDE_DIR = 'examples'
+VIEWER_ONLY = True
+SLIDE_CACHE_SIZE = 10
+DEEPZOOM_FORMAT = 'jpeg'
+DEEPZOOM_TILE_SIZE = 254
+DEEPZOOM_OVERLAP = 1
+DEEPZOOM_LIMIT_BOUNDS = True
+DEEPZOOM_TILE_QUALITY = 75
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<Accordion title="Server won't start or connection refused">
+  - Check if the port is already in use: `lsof -i :<port>`
+  - Verify firewall settings allow the port
+  - Try changing the port with `--port`
+</Accordion>
+
+<Accordion title="Slides not appearing in viewer">
+  - Verify slide directory path is correct
+  - Check that slides are in OpenSlide-compatible format
+  - Review server console for error messages
+  - Ensure slides don't contain 'dgai-mask' or 'dgai-uncertainty' in filename (these are filtered)
+</Accordion>
+
+<Accordion title="Poor image quality in viewer">
+  - Increase JPEG quality with `--quality 90` or higher
+  - Consider using PNG format with `--format png` (slower but lossless)
+  - Adjust tile size with `--size` for different performance characteristics
+</Accordion>
+
+## Source Reference
+
+Configuration options are defined in `main_server.py:245-297`.

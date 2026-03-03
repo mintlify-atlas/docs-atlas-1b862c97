@@ -1,0 +1,531 @@
+---
+title: Understanding Results
+description: Comprehensive guide to interpreting segmentation masks, uncertainty maps, and prediction confidence
+---
+
+DigiPathAI produces multiple outputs that provide different insights into the segmentation results. This guide explains how to interpret and use each type of output.
+
+## Output Files Overview
+
+After segmentation, you'll find three types of files:
+
+1. **Original WSI** - Your input whole slide image
+2. **Segmentation Mask** - Binary prediction of cancer regions (`*-dgai-mask.tiff`)
+3. **Uncertainty Map** - Model confidence visualization (`*-dgai-uncertainty.tiff`)
+
+### File Naming Convention
+
+```
+Original:     colon-sample-1.tiff
+Mask:         colon-sample-1-dgai-mask.tiff
+Uncertainty:  colon-sample-1-dgai-uncertainty.tiff
+```
+
+<Note>
+  The `-dgai-mask` and `-dgai-uncertainty` suffixes are automatically added by the segmentation pipeline and recognized by the web interface.
+</Note>
+
+## Segmentation Mask
+
+### What It Represents
+
+The segmentation mask is a binary image indicating predicted cancer regions:
+
+- **White pixels (255)**: Predicted cancer tissue
+- **Black pixels (0)**: Normal/background tissue
+
+### Thresholding Process
+
+The mask is created by thresholding the probability map:
+
+```python
+# From Segmentation.py (lines 336-337)
+threshold = 0.3
+np.place(probs_map['mean'], probs_map['mean'] >= threshold, 255)
+np.place(probs_map['mean'], probs_map['mean'] < threshold, 0)
+```
+
+<Tip>
+  The default threshold of 0.3 (30% probability) balances sensitivity and specificity. Regions with ≥30% predicted cancer probability are marked as positive.
+</Tip>
+
+### Visualization in Web Interface
+
+To view the segmentation mask:
+
+<Steps>
+  <Step title="Open the slide">
+    Navigate to your processed slide in the web interface.
+  </Step>
+  
+  <Step title="Enable mask overlay">
+    Toggle the "Show Cancer Regions" switch in the left sidebar.
+  </Step>
+  
+  <Step title="Adjust viewing">
+    The mask appears as a 50% opacity overlay on the original WSI, allowing you to see both the tissue and predictions simultaneously.
+  </Step>
+</Steps>
+
+```javascript
+// From viewer.html (lines 213-218)
+$("#mask-toggle-btn").change(function(){
+    tiledImage = viewer.world.getItemAt(1);
+    if($(this).is(':checked')) {
+        tiledImage.setOpacity(0.5);  // 50% overlay
+    } else {
+        tiledImage.setOpacity(0);
+    }
+});
+```
+
+### Reading Masks Programmatically
+
+```python
+import tifffile
+import numpy as np
+
+# Load the segmentation mask
+mask = tifffile.imread('colon-sample-1-dgai-mask.tiff')
+
+# Calculate metrics
+total_pixels = mask.shape[0] * mask.shape[1]
+cancer_pixels = np.sum(mask == 255)
+cancer_percentage = (cancer_pixels / total_pixels) * 100
+
+print(f"Image dimensions: {mask.shape}")
+print(f"Cancer pixels: {cancer_pixels:,}")
+print(f"Cancer coverage: {cancer_percentage:.2f}%")
+
+# Find cancer regions
+import cv2
+contours, _ = cv2.findContours(
+    mask.astype(np.uint8),
+    cv2.RETR_EXTERNAL,
+    cv2.CHAIN_APPROX_SIMPLE
+)
+print(f"Number of cancer regions: {len(contours)}")
+```
+
+## Uncertainty Map
+
+### What It Represents
+
+The uncertainty map visualizes the model's prediction variance:
+
+- **Dark regions**: High confidence (low variance)
+- **Bright regions**: Low confidence (high variance)
+
+Uncertainty helps identify:
+- Ambiguous tissue regions
+- Prediction reliability
+- Areas needing expert review
+
+### How It's Calculated
+
+```python
+# From Segmentation.py (lines 166-170)
+for i in range(batch_size):
+    # Mean prediction across models/augmentations
+    probs_map['mean'][x:x+h, y:y+w] += np.mean(patch_predictions, axis=0)[i,:,:,1]
+    
+    # Variance as uncertainty measure
+    probs_map['var'][x:x+h, y:y+w] += np.var(patch_predictions, axis=0)[i,:,:,1]
+```
+
+<Accordion title="Technical Details: Variance Calculation">
+  When using ensemble mode (`quick=False`) or test-time augmentation:
+  
+  1. Multiple predictions are generated for each patch
+  2. Variance is computed across all predictions
+  3. Higher variance = models disagree = higher uncertainty
+  4. The variance is normalized and scaled to 0-255 for visualization
+  
+  ```python
+  # Normalization and saving (line 351)
+  tifffile.imsave(uncertainty_path, probs_map['var'].T * 255, compress=9)
+  ```
+</Accordion>
+
+### Interpreting Uncertainty
+
+| Uncertainty Level | Interpretation | Action |
+|------------------|----------------|--------|
+| Very Low (dark) | High model confidence | Trust prediction |
+| Low-Medium | Moderate confidence | Acceptable for most cases |
+| High (bright) | Low confidence | Consider manual review |
+| Very High | Ambiguous region | Requires expert evaluation |
+
+<Warning>
+  High uncertainty doesn't necessarily mean incorrect prediction. It indicates the model is less certain, often occurring at tissue boundaries or in regions with complex morphology.
+</Warning>
+
+### Using Uncertainty for Quality Control
+
+```python
+import tifffile
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load mask and uncertainty
+mask = tifffile.imread('slide-dgai-mask.tiff')
+uncertainty = tifffile.imread('slide-dgai-uncertainty.tiff')
+
+# Find high-uncertainty cancer predictions
+cancer_regions = (mask == 255)
+high_uncertainty = (uncertainty > 200)  # High uncertainty threshold
+uncertain_cancer = cancer_regions & high_uncertainty
+
+# Calculate statistics
+total_cancer = np.sum(cancer_regions)
+uncertain_cancer_count = np.sum(uncertain_cancer)
+uncertain_percentage = (uncertain_cancer_count / total_cancer) * 100
+
+print(f"Total cancer pixels: {total_cancer:,}")
+print(f"Uncertain cancer pixels: {uncertain_cancer_count:,}")
+print(f"Percentage requiring review: {uncertain_percentage:.2f}%")
+
+# Visualize
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+axes[0].imshow(mask, cmap='gray')
+axes[0].set_title('Segmentation Mask')
+axes[1].imshow(uncertainty, cmap='hot')
+axes[1].set_title('Uncertainty Map')
+axes[2].imshow(uncertain_cancer, cmap='gray')
+axes[2].set_title('High-Uncertainty Cancer Regions')
+plt.tight_layout()
+plt.savefig('uncertainty_analysis.png', dpi=300)
+```
+
+## Prediction Confidence
+
+### Probability Maps
+
+Before thresholding, the model produces continuous probability maps (0-1 range):
+
+```python
+# These are stored in memory during processing
+probs_map['mean']  # Average probability across models
+probs_map['var']   # Variance/uncertainty
+```
+
+### Ensemble vs. Single Model Confidence
+
+<Accordion title="Single Model (quick=True)">
+  - Predictions from one model architecture
+  - Faster processing
+  - Lower uncertainty in homogeneous regions
+  - May have higher uncertainty in complex areas
+  
+  ```python
+  mask = getSegmentation(
+      img_path='slide.tiff',
+      quick=True,
+      model='dense',
+      mode='colon'
+  )
+  ```
+</Accordion>
+
+<Accordion title="Ensemble (quick=False)">
+  - Predictions averaged across 3 models (DenseNet, Inception, DeepLabV3)
+  - Better calibrated uncertainty estimates
+  - More robust in challenging regions
+  - 3-4x slower processing
+  
+  ```python
+  mask = getSegmentation(
+      img_path='slide.tiff',
+      quick=False,  # Use all 3 models
+      mode='colon'
+  )
+  ```
+  
+  <Note>
+    Ensemble mode provides more reliable uncertainty estimates because variance is computed across architecturally diverse models.
+  </Note>
+</Accordion>
+
+## Overlay Visualization
+
+### Web Interface Overlay
+
+The web interface provides interactive overlay visualization:
+
+```javascript
+// Three layers in OpenSeadragon viewer:
+// Layer 0: Original WSI
+// Layer 1: Segmentation mask (toggleable)
+// Layer 2: Uncertainty map (can be enabled)
+
+viewer.open(tile_source);  // Original slide
+viewer.addTiledImage({
+    tileSource: mask_source,
+    opacity: 0,  // Initially hidden
+});
+viewer.addTiledImage({
+    tileSource: uncertainty_source,
+    opacity: 0,  // Initially hidden
+});
+```
+
+### Custom Overlay with Python
+
+```python
+import tifffile
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+# Load all components
+original = tifffile.imread('slide.tiff')
+mask = tifffile.imread('slide-dgai-mask.tiff')
+uncertainty = tifffile.imread('slide-dgai-uncertainty.tiff')
+
+# Downsample for visualization if needed
+from skimage.transform import resize
+scale = 0.1  # 10% of original size
+original_small = resize(original, 
+                        (int(original.shape[0]*scale), 
+                         int(original.shape[1]*scale)))
+mask_small = resize(mask, 
+                    (int(mask.shape[0]*scale), 
+                     int(mask.shape[1]*scale)))
+uncertainty_small = resize(uncertainty,
+                           (int(uncertainty.shape[0]*scale),
+                            int(uncertainty.shape[1]*scale)))
+
+# Create composite visualization
+fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+
+# Original
+axes[0, 0].imshow(original_small)
+axes[0, 0].set_title('Original WSI')
+axes[0, 0].axis('off')
+
+# Mask overlay
+axes[0, 1].imshow(original_small)
+mask_overlay = np.ma.masked_where(mask_small < 128, mask_small)
+axes[0, 1].imshow(mask_overlay, cmap='Reds', alpha=0.5)
+axes[0, 1].set_title('Cancer Region Overlay')
+axes[0, 1].axis('off')
+
+# Uncertainty overlay
+axes[1, 0].imshow(original_small)
+axes[1, 0].imshow(uncertainty_small, cmap='jet', alpha=0.4)
+axes[1, 0].set_title('Uncertainty Overlay')
+axes[1, 0].axis('off')
+
+# Combined: Cancer + Uncertainty
+axes[1, 1].imshow(original_small)
+# Show only high-uncertainty cancer regions
+uncertain_cancer = (mask_small > 128) & (uncertainty_small > 200)
+uncertain_overlay = np.ma.masked_where(~uncertain_cancer, 
+                                        np.ones_like(mask_small))
+axes[1, 1].imshow(uncertain_overlay, cmap='autumn', alpha=0.6)
+axes[1, 1].set_title('High-Uncertainty Cancer Regions')
+axes[1, 1].axis('off')
+
+# Add legend
+red_patch = mpatches.Patch(color='red', alpha=0.5, label='Cancer')
+yellow_patch = mpatches.Patch(color='yellow', alpha=0.6, 
+                              label='Uncertain Cancer')
+plt.legend(handles=[red_patch, yellow_patch], 
+          loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=2)
+
+plt.tight_layout()
+plt.savefig('comprehensive_overlay.png', dpi=300, bbox_inches='tight')
+print("Saved comprehensive overlay visualization")
+```
+
+## Saving and Exporting
+
+### File Format Details
+
+All outputs are saved as pyramidal TIFF files for efficient viewing:
+
+```python
+# From Segmentation.py (lines 333-334, 345-346, 351-352)
+# Save probability map
+tifffile.imsave(probs_path, probs_map['mean'].T, compress=9)
+os.system('convert ' + probs_path + 
+          " -compress jpeg -quality 90 " +
+          "-define tiff:tile-geometry=256x256 ptif:" + probs_path)
+
+# Save binary mask
+tifffile.imsave(mask_path, probs_map['mean'].T, compress=9)
+os.system('convert ' + mask_path + 
+          " -compress jpeg -quality 90 " +
+          "-define tiff:tile-geometry=256x256 ptif:" + mask_path)
+
+# Save uncertainty
+tifffile.imsave(uncertainty_path, probs_map['var'].T * 255, compress=9)
+os.system('convert ' + uncertainty_path + 
+          " -compress jpeg -quality 90 " +
+          "-define tiff:tile-geometry=256x256 ptif:" + uncertainty_path)
+```
+
+<Tip>
+  Pyramidal TIFF format enables efficient viewing of large images in the web interface without loading the entire file into memory.
+</Tip>
+
+### Export to Different Formats
+
+```python
+import tifffile
+from PIL import Image
+import numpy as np
+
+# Load mask
+mask = tifffile.imread('slide-dgai-mask.tiff')
+
+# Export as PNG (for presentation)
+mask_pil = Image.fromarray(mask.astype(np.uint8))
+mask_pil.save('mask.png', optimize=True)
+
+# Export as JPEG (smaller file size)
+mask_pil.save('mask.jpg', quality=95)
+
+# Export downsampled version
+from skimage.transform import resize
+mask_small = resize(mask, (mask.shape[0]//4, mask.shape[1]//4), 
+                    preserve_range=True, order=0)  # Nearest neighbor
+Image.fromarray(mask_small.astype(np.uint8)).save('mask_preview.png')
+
+# Export to NumPy array
+np.save('mask.npy', mask)
+
+# Export metadata
+metadata = {
+    'shape': mask.shape,
+    'cancer_pixels': int(np.sum(mask == 255)),
+    'total_pixels': int(mask.shape[0] * mask.shape[1]),
+    'cancer_percentage': float(np.sum(mask == 255) / (mask.shape[0] * mask.shape[1]) * 100)
+}
+
+import json
+with open('mask_metadata.json', 'w') as f:
+    json.dump(metadata, f, indent=2)
+```
+
+### Quantitative Analysis Export
+
+```python
+import pandas as pd
+import cv2
+import numpy as np
+import tifffile
+
+mask = tifffile.imread('slide-dgai-mask.tiff')
+uncertainty = tifffile.imread('slide-dgai-uncertainty.tiff')
+
+# Find connected components
+num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+    (mask == 255).astype(np.uint8), connectivity=8
+)
+
+# Analyze each cancer region
+regions_data = []
+for i in range(1, num_labels):  # Skip background (label 0)
+    region_mask = (labels == i)
+    
+    # Extract statistics
+    area = stats[i, cv2.CC_STAT_AREA]
+    x, y, w, h = stats[i, [cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, 
+                           cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT]]
+    cx, cy = centroids[i]
+    
+    # Calculate mean uncertainty for this region
+    region_uncertainty = uncertainty[region_mask].mean()
+    
+    regions_data.append({
+        'region_id': i,
+        'area_pixels': area,
+        'centroid_x': cx,
+        'centroid_y': cy,
+        'bounding_box_x': x,
+        'bounding_box_y': y,
+        'bounding_box_width': w,
+        'bounding_box_height': h,
+        'mean_uncertainty': region_uncertainty
+    })
+
+# Create DataFrame and export
+df = pd.DataFrame(regions_data)
+df = df.sort_values('area_pixels', ascending=False)
+df.to_csv('cancer_regions_analysis.csv', index=False)
+print(f"Exported analysis of {len(df)} cancer regions")
+print(f"\nTop 5 largest regions:")
+print(df.head())
+```
+
+## Quality Assurance
+
+### Automated QA Checks
+
+```python
+def qa_segmentation_results(mask_path, uncertainty_path):
+    """Run automated quality assurance checks on segmentation results"""
+    
+    mask = tifffile.imread(mask_path)
+    uncertainty = tifffile.imread(uncertainty_path)
+    
+    qa_results = {}
+    
+    # Check 1: Dimension mismatch
+    if mask.shape != uncertainty.shape:
+        qa_results['dimension_check'] = 'FAIL: Mask and uncertainty dimensions differ'
+    else:
+        qa_results['dimension_check'] = 'PASS'
+    
+    # Check 2: Empty mask
+    cancer_pixels = np.sum(mask == 255)
+    if cancer_pixels == 0:
+        qa_results['empty_mask'] = 'WARNING: No cancer detected'
+    else:
+        qa_results['empty_mask'] = f'PASS: {cancer_pixels:,} cancer pixels'
+    
+    # Check 3: Suspiciously high cancer coverage
+    total_pixels = mask.shape[0] * mask.shape[1]
+    cancer_percentage = (cancer_pixels / total_pixels) * 100
+    if cancer_percentage > 80:
+        qa_results['coverage_check'] = f'WARNING: {cancer_percentage:.1f}% cancer coverage'
+    else:
+        qa_results['coverage_check'] = f'PASS: {cancer_percentage:.2f}% coverage'
+    
+    # Check 4: High uncertainty in predictions
+    high_uncertainty_fraction = np.sum(uncertainty > 200) / total_pixels
+    if high_uncertainty_fraction > 0.3:
+        qa_results['uncertainty_check'] = f'WARNING: {high_uncertainty_fraction*100:.1f}% high uncertainty'
+    else:
+        qa_results['uncertainty_check'] = 'PASS'
+    
+    # Check 5: Value range validation
+    if not np.all(np.isin(mask, [0, 255])):
+        qa_results['value_range'] = 'FAIL: Mask contains non-binary values'
+    else:
+        qa_results['value_range'] = 'PASS'
+    
+    return qa_results
+
+# Run QA
+qa = qa_segmentation_results(
+    'slide-dgai-mask.tiff',
+    'slide-dgai-uncertainty.tiff'
+)
+
+for check, result in qa.items():
+    print(f"{check}: {result}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running Segmentation" icon="play" href="/guide/running-segmentation">
+    Learn how to run segmentation via UI and Python API
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/segmentation">
+    Detailed API documentation for all parameters
+  </Card>
+</CardGroup>

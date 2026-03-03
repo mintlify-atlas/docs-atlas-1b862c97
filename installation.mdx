@@ -1,0 +1,218 @@
+---
+title: Installation
+description: Install DigiPathAI with viewer-only or full AI pipeline support
+---
+
+# Installation Guide
+
+DigiPathAI offers two installation modes depending on your needs. You can install just the UI for viewing whole slide images, or include the full AI pipeline with GPU support for automated segmentation.
+
+## System Requirements
+
+### Basic Requirements (UI Only)
+- Python 3.5 or higher
+- OpenSlide library installed on your system
+- 4GB RAM minimum
+
+### Full Pipeline Requirements
+- Python 3.5 or higher
+- OpenSlide library installed on your system
+- NVIDIA GPU with CUDA support (recommended)
+- 8GB+ GPU memory for optimal performance
+- 16GB+ system RAM
+
+<Warning>
+The AI segmentation pipeline requires TensorFlow GPU (version 1.14 to 1.x) and PyTorch. Ensure you have compatible CUDA drivers installed before proceeding with the full installation.
+</Warning>
+
+## Installing OpenSlide
+
+Before installing DigiPathAI, you need to install the OpenSlide library for your operating system:
+
+<CodeGroup>
+```bash Ubuntu/Debian
+sudo apt-get install openslide-tools python3-openslide
+```
+
+```bash macOS
+brew install openslide
+```
+
+```bash Windows
+# Download the Windows binaries from:
+# https://openslide.org/download/
+# Add the bin directory to your PATH
+```
+</CodeGroup>
+
+## Installation Options
+
+<Steps>
+  <Step title="Choose Your Installation Mode">
+    Select the installation method based on your use case:
+    
+    ### Option 1: UI Only (Viewer)
+    
+    Install just the web-based viewer without AI capabilities. This is ideal for:
+    - Viewing and exploring WSI images
+    - Systems without GPU support
+    - Quick deployment and minimal dependencies
+    
+    ```bash
+    pip install DigiPathAI
+    ```
+    
+    **Installed dependencies:**
+    - `flask==2.2.5` - Web server framework
+    - `openslide-python` - Python bindings for OpenSlide
+    
+    ### Option 2: Full AI Pipeline (with GPU)
+    
+    Install the complete package including deep learning models for segmentation:
+    
+    ```bash
+    pip install "DigiPathAI[gpu]"
+    ```
+    
+    **Additional GPU dependencies:**
+    - `torch` - PyTorch deep learning framework
+    - `torchvision` - Computer vision utilities
+    - `tensorflow-gpu>=1.14,<2` - TensorFlow for legacy models
+    - `opencv-python` - Image processing
+    - `imgaug` - Image augmentation
+    - `tqdm` - Progress bars
+    - `matplotlib` - Plotting and visualization
+    - `scikit-learn` - Machine learning utilities
+    - `scikit-image` - Image processing algorithms
+    - `pydensecrf` - Dense CRF post-processing
+    - `tifffile` - TIFF file handling
+    - `pandas` - Data manipulation
+    - `wget` - Model downloading
+    
+    <Note>
+    Both installation methods install the same DigiPathAI package. If you start with UI-only, you can manually install GPU dependencies later to enable AI features.
+    </Note>
+  </Step>
+  
+  <Step title="Verify Installation">
+    Check that DigiPathAI is properly installed:
+    
+    ```bash
+    digipathai --help
+    ```
+    
+    You should see the command-line help output with available options.
+    
+    Verify the Python module:
+    
+    ```python
+    python -c "import DigiPathAI; print('DigiPathAI installed successfully')"
+    ```
+  </Step>
+  
+  <Step title="Test the Installation">
+    Launch the server to ensure everything works:
+    
+    ```bash
+    # Navigate to a directory with WSI images (or an empty directory to test)
+    cd /path/to/slides
+    
+    # Start the server
+    digipathai localhost 8080
+    ```
+    
+    Open your browser to `http://localhost:8080` and verify the interface loads.
+    
+    <Tip>
+    If you installed the UI-only version, the segmentation features will be disabled. You can still view all your WSI images.
+    </Tip>
+  </Step>
+</Steps>
+
+## GPU Configuration (Optional)
+
+For optimal performance with the AI pipeline, configure your GPU settings:
+
+### CUDA Setup
+
+Ensure you have CUDA 10.0 or 10.1 installed (required for TensorFlow GPU 1.x):
+
+```bash
+# Check CUDA version
+nvcc --version
+
+# Verify GPU detection
+python -c "import tensorflow as tf; print(tf.test.is_gpu_available())"
+```
+
+### Memory Configuration
+
+The segmentation pipeline automatically configures TensorFlow to allow GPU memory growth. Default settings in `Segmentation.py:283`:
+
+```python
+core_config = tf.ConfigProto()
+core_config.gpu_options.allow_growth = True
+```
+
+You can adjust batch size and patch size to fit your GPU memory:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+prediction = getSegmentation(
+    img_path,
+    patch_size=256,   # Reduce if out of memory
+    batch_size=32,    # Reduce if out of memory
+)
+```
+
+## Upgrading DigiPathAI
+
+To upgrade to the latest version:
+
+```bash
+# Upgrade UI-only installation
+pip install --upgrade DigiPathAI
+
+# Upgrade with GPU dependencies
+pip install --upgrade "DigiPathAI[gpu]"
+```
+
+## Troubleshooting
+
+### OpenSlide Not Found
+
+If you get "OpenSlide library not found" errors:
+
+1. Verify OpenSlide is installed: `openslide-show-properties --version`
+2. On Windows, ensure OpenSlide bin directory is in PATH
+3. On Linux, try: `sudo ldconfig`
+
+### CUDA/GPU Errors
+
+If you encounter GPU-related errors:
+
+1. Verify CUDA installation: `nvcc --version`
+2. Check TensorFlow GPU support: `python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"`
+3. Consider installing specific CUDA-compatible versions of PyTorch and TensorFlow
+
+### Import Errors
+
+If you see import errors for specific packages:
+
+```bash
+# Install missing dependencies manually
+pip install torch torchvision opencv-python imgaug matplotlib scikit-learn scikit-image
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Launch the server and run your first segmentation
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the Python API for programmatic access
+  </Card>
+</CardGroup>

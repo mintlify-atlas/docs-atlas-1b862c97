@@ -1,0 +1,158 @@
+---
+title: 'Models Overview'
+description: 'Ensemble of three deep learning architectures for tissue segmentation'
+icon: 'brain'
+---
+
+## Model Architecture Ensemble
+
+DigiPathAI employs an ensemble of three state-of-the-art deep learning architectures to achieve robust tissue segmentation in digital pathology images:
+
+<CardGroup cols={3}>
+  <Card title="DenseNet U-Net" icon="brain-circuit" href="/models/densenet">
+    Dense blocks with skip connections for feature reuse
+  </Card>
+  <Card title="Inception-ResNet" icon="network-wired" href="/models/inception">
+    Multi-scale feature extraction with residual connections
+  </Card>
+  <Card title="DeepLabv3+" icon="expand" href="/models/deeplabv3">
+    Atrous spatial pyramid pooling for multi-scale context
+  </Card>
+</CardGroup>
+
+## Ensemble Prediction
+
+The final segmentation is produced by combining predictions from all three models:
+
+1. Each model generates probability maps independently
+2. Predictions are averaged across all three architectures
+3. Optional post-processing with Conditional Random Fields (CRF) for refinement
+
+This ensemble approach provides:
+- **Robustness**: Reduces model-specific biases
+- **Accuracy**: Leverages strengths of different architectures
+- **Reliability**: Consistent performance across diverse tissue types
+
+## Model Weights Management
+
+DigiPathAI automatically downloads and caches pretrained model weights on first use.
+
+### Download Location
+
+Model weights are stored in:
+```bash
+~/.DigiPathAI/{dataset}_models/
+```
+
+Where `{dataset}` can be:
+- `digestpath` - DigestPath challenge dataset
+- `paip` - PAIP challenge dataset
+- `camelyon` - Camelyon challenge dataset
+
+### Automatic Download
+
+The download process is handled automatically by utility functions:
+
+<Tabs>
+  <Tab title="DigestPath Models">
+    ```python
+    from DigiPathAI.helpers.utils import download_digestpath
+    
+    # Downloads 3 model weights (~300MB total)
+    download_digestpath()
+    ```
+    
+    Downloads to: `~/.DigiPathAI/digestpath_models/`
+    - `digestpath_deeplabv3.h5`
+    - `digestpath_densenet.h5`
+    - `digestpath_inception.h5`
+  </Tab>
+  
+  <Tab title="PAIP Models">
+    ```python
+    from DigiPathAI.helpers.utils import download_paip
+    
+    # Downloads 3 model weights (~300MB total)
+    download_paip()
+    ```
+    
+    Downloads to: `~/.DigiPathAI/paip_models/`
+    - `paip_deeplabv3.h5`
+    - `paip_densenet.h5`
+    - `paip_inception.h5`
+  </Tab>
+  
+  <Tab title="Camelyon Models">
+    ```python
+    from DigiPathAI.helpers.utils import download_camelyon
+    
+    # Downloads 3 model weights (~300MB total)
+    download_camelyon()
+    ```
+    
+    Downloads to: `~/.DigiPathAI/camelyon_models/`
+    - `camelyon_deeplabv3.h5`
+    - `camelyon_densenet.h5`
+    - `camelyon_inception.h5`
+  </Tab>
+</Tabs>
+
+### Loading Models
+
+The `load_trained_models()` function handles model instantiation and weight loading:
+
+```python helpers/utils.py (427-448)
+from DigiPathAI.helpers.utils import load_trained_models
+
+# Load individual models
+inception_model = load_trained_models(
+    model='inception',
+    path='~/.DigiPathAI/digestpath_models/digestpath_inception.h5',
+    patch_size=256
+)
+
+densenet_model = load_trained_models(
+    model='dense',
+    path='~/.DigiPathAI/digestpath_models/digestpath_densenet.h5',
+    patch_size=256
+)
+
+deeplab_model = load_trained_models(
+    model='deeplabv3',
+    path='~/.DigiPathAI/digestpath_models/digestpath_deeplabv3.h5',
+    patch_size=256
+)
+```
+
+<Note>
+  Model weights are automatically cached after first download. Subsequent runs will use cached weights without re-downloading.
+</Note>
+
+## Input Requirements
+
+All three models expect:
+- **Input shape**: `(height, width, 3)` RGB images
+- **Patch size**: 256×256 pixels (default)
+- **Dynamic input**: Models accept `(None, None, 3)` for variable-sized inputs
+- **Normalization**: Standard ImageNet preprocessing
+
+## Output Format
+
+Each model produces:
+- **Shape**: `(height, width, 2)` probability maps
+- **Classes**: 2-class softmax output (background, tissue)
+- **Range**: [0, 1] probabilities per class
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="DenseNet Details" icon="sitemap" href="/models/densenet">
+    Learn about DenseNet121 U-Net architecture
+  </Card>
+  <Card title="Inception Details" icon="project-diagram" href="/models/inception">
+    Explore Inception-ResNet-v2 U-Net
+  </Card>
+  <Card title="DeepLab Details" icon="layer-group" href="/models/deeplabv3">
+    Understand DeepLabv3+ with ASPP
+  </Card>
+</CardGroup>

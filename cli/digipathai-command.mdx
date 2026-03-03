@@ -1,0 +1,148 @@
+---
+title: digipathai Command
+description: Main CLI command to launch the DigiPathAI web server and viewer interface
+---
+
+## Overview
+
+The `digipathai` command is the main entry point for starting the DigiPathAI web server. It launches a Flask-based application that provides a responsive whole slide image (WSI) viewer with optional AI-powered cancer tissue segmentation capabilities.
+
+<Note>
+The `digipathai` command is automatically installed when you install the DigiPathAI package via pip. It's defined as a console script entry point in the package setup.
+</Note>
+
+## Basic Usage
+
+The simplest way to start DigiPathAI is to run the command in a directory containing your slide images:
+
+```bash
+digipathai
+```
+
+This will:
+- Start a local web server on `127.0.0.1:8080`
+- Serve slides from the current directory
+- Open the viewer interface for browsing and viewing WSI images
+
+## Starting the Web Server
+
+### Default Configuration
+
+Start the server with default settings:
+
+```bash
+digipathai
+```
+
+### Custom Host and Port
+
+Specify a custom host address and port:
+
+```bash
+digipathai -l 0.0.0.0 -p 5000
+```
+
+This allows access from other machines on your network.
+
+### Specify Slide Directory
+
+Point to a specific directory containing your slide images:
+
+```bash
+digipathai -s /path/to/slides
+```
+
+### Enable Debug Mode
+
+Run in debug mode for development (not recommended for production):
+
+```bash
+digipathai -d
+```
+
+<Tip>
+Debug mode provides detailed error messages and automatic reloading when code changes are detected.
+</Tip>
+
+## Accessing the UI
+
+Once the server is running, you can access the web interface in your browser:
+
+1. **Local Access**: Navigate to `http://127.0.0.1:8080` (or your custom host/port)
+2. **Network Access**: If using `-l 0.0.0.0`, access from other devices using `http://<your-ip>:<port>`
+
+The web interface provides:
+- A file browser to navigate through slide directories
+- An interactive viewer powered by OpenSeadragon
+- Deep zoom functionality for high-resolution WSI navigation
+- AI segmentation controls (when not in viewer-only mode)
+
+## Viewer-Only Mode
+
+If you want to use only the viewer without AI segmentation capabilities:
+
+```bash
+digipathai --viewer-only
+```
+
+This is useful when:
+- You don't have GPU resources available
+- You haven't installed the full AI dependencies
+- You only need to view slides without performing analysis
+
+<Note>
+Viewer-only mode is the default when the AI dependencies are not installed. The segmentation features will be automatically disabled.
+</Note>
+
+## Common Usage Examples
+
+### Example 1: Basic Local Viewing
+
+```bash
+cd /path/to/my/slides
+digipathai
+```
+
+Then open `http://127.0.0.1:8080` in your browser.
+
+### Example 2: Network-Accessible Server
+
+```bash
+digipathai -s /data/pathology/slides -l 0.0.0.0 -p 8080
+```
+
+Access from any machine on the network at `http://<server-ip>:8080`.
+
+### Example 3: High-Quality Tile Rendering
+
+```bash
+digipathai -s ./slides -Q 95 -f png
+```
+
+Uses PNG format with high JPEG quality (95) for tile generation.
+
+### Example 4: Custom Tile Configuration
+
+```bash
+digipathai -S 512 -e 2 -B
+```
+
+Sets tile size to 512 pixels, overlap to 2 pixels, and displays the entire scan area (ignores slide bounds).
+
+## Entry Point Definition
+
+The `digipathai` command is registered in the package's `setup.py` as:
+
+```python
+entry_points={
+    'console_scripts': ['digipathai=DigiPathAI.main_server:main']
+}
+```
+
+This means running `digipathai` executes the `main()` function from `DigiPathAI/main_server.py`.
+
+## Next Steps
+
+- See [CLI Options](/cli/options) for a complete reference of all command-line options
+- Learn about [AI Segmentation](/guide/running-segmentation) to use the cancer detection features
+- Explore [Python API Usage](/api/segmentation) for programmatic access

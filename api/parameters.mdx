@@ -1,0 +1,500 @@
+---
+title: 'Parameter Reference'
+description: 'Detailed documentation for all getSegmentation parameters'
+icon: 'sliders'
+---
+
+## Overview
+
+This page provides comprehensive documentation for all parameters in the `getSegmentation` function. Parameters are organized by category for easier navigation.
+
+## Required Parameters
+
+<ParamField path="img_path" type="str" required>
+  **Path to the whole slide image (WSI) file**
+  
+  The input image must be in a format supported by OpenSlide, typically TIFF or SVS.
+  
+  **Valid formats:**
+  - `.tiff` / `.tif`: Standard TIFF files
+  - `.svs`: Aperio ScanScope Virtual Slide
+  - Other OpenSlide-supported formats
+  
+  **Example values:**
+  - `'/data/slides/patient_001.tiff'`
+  - `'./examples/colon-cancer-slide.svs'`
+  - `'~/workspace/samples/liver_biopsy.tiff'`
+  
+  <Warning>
+    The file must exist and be readable. The function will fail if the path is invalid.
+  </Warning>
+</ParamField>
+
+<ParamField path="mode" type="str" required>
+  **Tissue type for model selection**
+  
+  Determines which pre-trained models to use for segmentation. Each mode uses models trained on specific datasets.
+  
+  **Allowed values:**
+  
+  | Value | Tissue Type | Dataset | Models Used |
+  |-------|-------------|---------|-------------|
+  | `'colon'` | Colorectal tissue | DigestPath | digestpath_inception.h5<br/>digestpath_deeplabv3.h5<br/>digestpath_densenet.h5 |
+  | `'liver'` | Liver tissue | PAIP | paip_inception.h5<br/>paip_deeplabv3.h5<br/>paip_densenet.h5 |
+  | `'breast'` | Breast tissue | Camelyon | camelyon_inception.h5<br/>camelyon_deeplabv3.h5<br/>camelyon_densenet.h5 |
+  
+  **Default:** `'colon'`
+  
+  **Model storage:**
+  - Colon models: `~/.DigiPathAI/digestpath_models/`
+  - Liver models: `~/.DigiPathAI/paip_models/`
+  - Breast models: `~/.DigiPathAI/camelyon_models/`
+  
+  <Note>
+    Models are automatically downloaded on first use. The function checks if models exist and downloads them if needed.
+  </Note>
+  
+  <Warning>
+    Case-sensitive! The mode is converted to lowercase internally, but only exact matches are accepted. Invalid modes raise a `ValueError`.
+  </Warning>
+</ParamField>
+
+## Patch Processing Parameters
+
+These parameters control how the WSI is divided into patches for processing.
+
+<ParamField path="patch_size" type="int" default="256">
+  **Size of square patches extracted from the WSI (in pixels)**
+  
+  The WSI is divided into patches of size `patch_size × patch_size` for model inference.
+  
+  **Common values:**
+  - `128`: Small patches, less context, lower memory
+  - `256`: **Recommended** - good balance of context and memory
+  - `512`: Large patches, more context, higher memory
+  
+  **Memory impact:**
+  - 128×128: ~4 GB GPU memory (batch_size=32)
+  - 256×256: ~6 GB GPU memory (batch_size=32)
+  - 512×512: ~12 GB GPU memory (batch_size=16)
+  
+  **Performance considerations:**
+  - Larger patches provide more spatial context for the model
+  - Larger patches require more GPU memory per batch
+  - Must be compatible with model architecture (typically multiples of 32)
+  
+  <Note>
+    The models are trained on 256×256 patches, so using this size typically gives best results.
+  </Note>
+</ParamField>
+
+<ParamField path="stride_size" type="int" default="128">
+  **Number of pixels to skip between consecutive patches**
+  
+  Controls the sliding window step size when extracting patches from the WSI.
+  
+  **Relationship to patch_size:**
+  - `stride_size = patch_size`: No overlap (fastest, lowest quality)
+  - `stride_size = patch_size / 2`: **Recommended** - 50% overlap
+  - `stride_size = patch_size / 4`: 75% overlap (slower, higher quality)
+  
+  **Examples with patch_size=256:**
+  - `stride_size=256`: No overlap, ~4x faster
+  - `stride_size=128`: 50% overlap, **recommended balance**
+  - `stride_size=64`: 75% overlap, ~16x slower but smoother results
+  
+  **Performance impact:**
+  
+  For a 10,000×10,000 WSI:
+  - stride=256: ~1,600 patches
+  - stride=128: ~6,400 patches (4x slower)
+  - stride=64: ~25,600 patches (16x slower)
+  
+  <Warning>
+    Very small stride sizes dramatically increase processing time. Balance quality needs with time constraints.
+  </Warning>
+</ParamField>
+
+<ParamField path="batch_size" type="int" default="32">
+  **Number of patches processed simultaneously**
+  
+  Higher batch sizes increase throughput but require more GPU memory.
+  
+  **Recommended values by GPU:**
+  
+  | GPU Memory | Quick Mode | Ensemble Mode |
+  |------------|------------|---------------|
+  | 4 GB | 8-16 | 4-8 |
+  | 8 GB | 16-32 | 8-16 |
+  | 12 GB | 32-64 | 16-32 |
+  | 16+ GB | 64-128 | 32-64 |
+  
+  **Default:** `32`
+  
+  **Performance impact:**
+  - Larger batches = better GPU utilization = faster processing
+  - Too large = out of memory errors
+  - Too small = underutilized GPU = slower processing
+  
+  <Note>
+    If you encounter CUDA out-of-memory errors, reduce batch_size by half and try again.
+  </Note>
+</ParamField>
+
+## Model Configuration Parameters
+
+<ParamField path="quick" type="bool" default="True">
+  **Enable fast single-model mode vs. multi-model ensemble**
+  
+  Controls the model ensemble strategy for predictions.
+  
+  **Values:**
+  
+  - `True` (**default**): Uses only the model specified by the `model` parameter
+    - Faster inference (~4x speedup)
+    - Lower memory requirements
+    - Good for rapid prototyping or resource-constrained environments
+  
+  - `False`: Ensembles all 3 models (inception, deeplabv3, densenet)
+    - Slower inference
+    - Higher accuracy (typically 2-5% improvement)
+    - Requires 3-4x more GPU memory
+    - Recommended for final production predictions
+  
+  **Performance comparison:**
+  
+  | Mode | Models Used | Relative Speed | GPU Memory | Typical Accuracy |
+  |------|-------------|----------------|------------|------------------|
+  | quick=True | 1 model | 1x (baseline) | ~6 GB | Good |
+  | quick=False | 3 models | ~0.25x (4x slower) | ~16 GB | Better (2-5% improvement) |
+  
+  <Warning>
+    When `quick=False`, the `model` parameter is ignored and all three architectures are used.
+  </Warning>
+</ParamField>
+
+<ParamField path="model" type="str" default="'dense'">
+  **Which model architecture to use in quick mode**
+  
+  Only applies when `quick=True`. Selects which single model to use for inference.
+  
+  **Allowed values:**
+  
+  | Value | Architecture | Description | Characteristics |
+  |-------|--------------|-------------|------------------|
+  | `'dense'` | DenseNet | Dense connections, feature reuse | **Default**, balanced speed/accuracy |
+  | `'inception'` | Inception-v3 | Multi-scale feature extraction | Good for multi-scale structures |
+  | `'deeplabv3'` | DeepLabV3+ | Atrous spatial pyramid pooling | Best boundary precision |
+  
+  **Default:** `'dense'`
+  
+  **Performance characteristics:**
+  - All three models have similar inference speed
+  - Accuracy differences are typically small (1-3%)
+  - Choice depends on tissue characteristics and personal preference
+  
+  **Example usage:**
+  ```python
+  # Use Inception model in quick mode
+  prediction = getSegmentation(
+      img_path='slide.tiff',
+      quick=True,
+      model='inception',
+      mode='colon'
+  )
+  ```
+  
+  <Warning>
+    Invalid model names raise a `ValueError`. Only `'dense'`, `'inception'`, and `'deeplabv3'` are supported.
+  </Warning>
+</ParamField>
+
+## Test-Time Augmentation Parameters
+
+<ParamField path="tta_list" type="list" default="None">
+  **List of augmentation transforms to apply during inference**
+  
+  Test-Time Augmentation (TTA) improves robustness by predicting on multiple transformed versions of each patch and averaging the results.
+  
+  **Allowed values:**
+  
+  | Transform | Description | Use Case |
+  |-----------|-------------|----------|
+  | `'FLIP_LEFT_RIGHT'` | Horizontal flip | Handles left-right symmetry |
+  | `'ROTATE_90'` | 90° clockwise rotation | Handles rotational variance |
+  | `'ROTATE_180'` | 180° rotation | Handles upside-down orientation |
+  | `'ROTATE_270'` | 270° clockwise (90° counter-clockwise) | Handles rotational variance |
+  
+  **Default:** `None` (no augmentation)
+  
+  **Example values:**
+  ```python
+  # Single augmentation
+  tta_list = ['FLIP_LEFT_RIGHT']
+  
+  # Multiple augmentations
+  tta_list = ['FLIP_LEFT_RIGHT', 'ROTATE_90', 'ROTATE_180']
+  
+  # All augmentations (5x slower but most robust)
+  tta_list = ['FLIP_LEFT_RIGHT', 'ROTATE_90', 'ROTATE_180', 'ROTATE_270']
+  ```
+  
+  **Performance impact:**
+  
+  | TTA List Length | Relative Speed | Accuracy Gain |
+  |-----------------|----------------|---------------|
+  | None (default) | 1x (baseline) | Baseline |
+  | 1 transform | ~0.5x (2x slower) | +0.5-1% |
+  | 2 transforms | ~0.33x (3x slower) | +1-2% |
+  | 4 transforms | ~0.2x (5x slower) | +1.5-3% |
+  
+  <Note>
+    TTA is automatically handled: predictions are made on augmented patches and inverse transforms are applied before averaging.
+  </Note>
+  
+  <Warning>
+    Each additional augmentation linearly increases processing time. Use sparingly for time-sensitive applications.
+  </Warning>
+</ParamField>
+
+## Post-Processing Parameters
+
+<ParamField path="crf" type="bool" default="False">
+  **Apply Conditional Random Fields for post-processing**
+  
+  Conditional Random Fields (CRF) can refine segmentation boundaries using color/spatial information.
+  
+  **Default:** `False`
+  
+  <Warning>
+    **Currently not functional.** The CRF implementation is commented out in the source code (Segmentation.py lines 327-331). Setting this parameter to `True` will have no effect.
+  </Warning>
+  
+  **Intended behavior (when implemented):**
+  - Smooths segmentation boundaries
+  - Enforces spatial consistency
+  - Uses image color information to refine edges
+  - Typically adds 10-30 seconds per WSI
+</ParamField>
+
+## Output Path Parameters
+
+These parameters specify where to save the output files.
+
+<ParamField path="mask_path" type="str" default="'../Results'">
+  **File path to save the binary segmentation mask**
+  
+  The binary mask contains thresholded predictions (0 or 255).
+  
+  **Format:** Compressed TIFF with JPEG compression and tiled structure (256×256 tiles)
+  
+  **Contents:**
+  - `255`: Tissue (probability ≥ 0.3 threshold)
+  - `0`: Background (probability < 0.3)
+  
+  **Example values:**
+  ```python
+  mask_path = './results/mask.tiff'
+  mask_path = '/output/patient_001/segmentation_mask.tiff'
+  mask_path = '~/workspace/predictions/colon_mask.tif'
+  ```
+  
+  **File size:** Typically 5-20% of original WSI size due to compression
+  
+  <Note>
+    The file is saved with pyramidal structure for efficient viewing in tools like QuPath or Aperio ImageScope.
+  </Note>
+</ParamField>
+
+<ParamField path="probs_path" type="str" default="'../Results'">
+  **File path to save the probability map**
+  
+  The probability map contains raw model outputs before thresholding.
+  
+  **Format:** Compressed TIFF with JPEG compression
+  
+  **Contents:**
+  - Float values from 0.0 to 1.0
+  - Represents probability of tissue at each pixel
+  - Higher values = stronger tissue prediction
+  
+  **Use cases:**
+  - Analyzing prediction confidence
+  - Applying custom thresholds
+  - Visualizing uncertainty regions
+  - Research and model evaluation
+  
+  **Example:**
+  ```python
+  probs_path = './results/probabilities.tiff'
+  ```
+</ParamField>
+
+<ParamField path="uncertainty_path" type="str" default="'../Results'">
+  **File path to save the uncertainty/variance map**
+  
+  The uncertainty map shows prediction variance across models and augmentations.
+  
+  **Format:** Compressed TIFF with values scaled to 0-255
+  
+  **Contents:**
+  - Variance of predictions across ensemble/TTA
+  - Higher values = more uncertain predictions
+  - Useful for identifying difficult regions
+  
+  **Use cases:**
+  - Quality control and identifying problematic areas
+  - Active learning sample selection
+  - Confidence visualization
+  - Detecting out-of-distribution samples
+  
+  **Example:**
+  ```python
+  uncertainty_path = './results/uncertainty.tiff'
+  ```
+  
+  <Note>
+    Uncertainty is only meaningful when using ensemble (`quick=False`) or TTA (`tta_list` not None). With a single model and no TTA, uncertainty will be zero everywhere.
+  </Note>
+</ParamField>
+
+## Advanced Parameters
+
+<ParamField path="mask_level" type="int" default="-1">
+  **Pyramid level for mask processing in multi-resolution WSIs**
+  
+  Whole slide images typically have multiple resolution levels in a pyramid structure. This parameter controls which level is used for certain mask operations.
+  
+  **Values:**
+  - `-1` (**default**): Use the highest resolution (level 0)
+  - `0`, `1`, `2`, etc.: Specific pyramid levels
+  
+  **Resolution levels (typical):**
+  
+  | Level | Relative Size | Use Case |
+  |-------|---------------|----------|
+  | 0 | 100% (full resolution) | Default, highest quality |
+  | 1 | 25% (0.5x downsample) | Faster processing |
+  | 2 | 6.25% (0.25x downsample) | Quick preview |
+  
+  **Default:** `-1` (highest resolution)
+  
+  <Note>
+    Most users should keep the default value. This parameter is primarily for advanced use cases with custom mask processing.
+  </Note>
+</ParamField>
+
+<ParamField path="status" type="dict" default="None">
+  **Dictionary for tracking processing progress (web server use)**
+  
+  Used by the DigiPathAI web interface to update progress bars and status messages.
+  
+  **Structure:**
+  ```python
+  status = {
+      'progress': 0,      # Integer 0-100 (percentage)
+      'status': 'Ready'   # String status message
+  }
+  ```
+  
+  **Updated by the function:**
+  - `status['progress']`: Set to 0-100 during processing
+  - `status['status']`: Updated with messages like:
+    - "Downloading Trained Models"
+    - "Loading Trained weights"
+    - "Running segmentation"
+    - "Saving Prediction Mask..."
+  
+  **Example usage:**
+  ```python
+  # Create status tracker
+  status = {'progress': 0, 'status': 'Initializing'}
+  
+  # Pass to function
+  prediction = getSegmentation(
+      img_path='slide.tiff',
+      status=status,
+      mode='colon'
+  )
+  
+  # Status is updated in-place during processing
+  print(f"Final status: {status['status']}")
+  print(f"Progress: {status['progress']}%")
+  ```
+  
+  **Default:** `None` (no progress tracking)
+  
+  <Note>
+    For command-line use, you can leave this as `None`. Progress information will be printed to stdout via tqdm progress bars.
+  </Note>
+</ParamField>
+
+## Parameter Combinations and Best Practices
+
+### Fast Prototyping
+
+```python
+prediction = getSegmentation(
+    img_path='slide.tiff',
+    patch_size=256,
+    stride_size=256,    # No overlap = fastest
+    batch_size=64,      # Large batch
+    quick=True,         # Single model
+    model='dense',
+    tta_list=None,      # No augmentation
+    mode='colon'
+)
+```
+
+**Speed:** Fastest  
+**Accuracy:** Good  
+**Use case:** Quick testing, prototyping, resource-constrained environments
+
+### Balanced Performance
+
+```python
+prediction = getSegmentation(
+    img_path='slide.tiff',
+    patch_size=256,
+    stride_size=128,    # 50% overlap (recommended)
+    batch_size=32,      # Default
+    quick=True,         # Single model
+    model='dense',
+    tta_list=None,
+    mode='colon'
+)
+```
+
+**Speed:** Medium  
+**Accuracy:** Very good  
+**Use case:** Standard production use, recommended for most applications
+
+### Maximum Accuracy
+
+```python
+prediction = getSegmentation(
+    img_path='slide.tiff',
+    patch_size=256,
+    stride_size=128,
+    batch_size=16,      # Smaller for ensemble
+    quick=False,        # Ensemble all models
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90'],  # Some augmentation
+    mode='colon'
+)
+```
+
+**Speed:** Slowest (~8x slower than fast mode)  
+**Accuracy:** Best  
+**Use case:** Research, critical diagnoses, when accuracy is paramount
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="getSegmentation Function" icon="function" href="/api/segmentation">
+    Full function documentation with examples
+  </Card>
+  
+  <Card title="Python API Overview" icon="code" href="/api/overview">
+    Overview of the Python API
+  </Card>
+</CardGroup>

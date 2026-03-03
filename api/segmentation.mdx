@@ -1,0 +1,267 @@
+---
+title: 'getSegmentation'
+description: 'Complete reference for the getSegmentation function'
+icon: 'function'
+---
+
+## Function Signature
+
+The `getSegmentation` function performs end-to-end tissue segmentation on whole slide images.
+
+```python Segmentation.py (lines 192-225)
+def getSegmentation(img_path, 
+                    patch_size=256, 
+                    stride_size=128,
+                    batch_size=32,
+                    tta_list=None,
+                    crf=False,
+                    probs_path='../Results',
+                    mask_path='../Results',
+                    uncertainty_path='../Results',
+                    status=None,
+                    quick=True,
+                    mask_level=-1,
+                    model='dense',
+                    mode='colon')
+```
+
+## Description
+
+This function provides a complete tissue segmentation pipeline that:
+
+1. **Loads pre-trained models** based on the specified tissue type (colon, liver, or breast)
+2. **Processes the WSI** in patches using sliding window inference
+3. **Applies optional augmentation** (Test-Time Augmentation) for improved accuracy
+4. **Generates probability maps** showing prediction confidence
+5. **Saves results** as TIFF files including mask, probability map, and uncertainty map
+6. **Returns the prediction** as a numpy array for further processing
+
+<Note>
+  Models are automatically downloaded on first use and cached in `~/.DigiPathAI/` directory.
+</Note>
+
+## Parameters
+
+<ParamField path="img_path" type="str" required>
+  Path to the whole slide image (WSI) file in TIFF format.
+  
+  Supported formats: `.tiff`, `.svs`, and other formats supported by OpenSlide.
+  
+  **Example:** `'/path/to/slide.tiff'`
+</ParamField>
+
+<ParamField path="patch_size" type="int" default="256">
+  Size of patches (in pixels) extracted from the WSI for inference.
+  
+  Common values: `128`, `256`, `512`
+  
+  **Impact:** Larger patches provide more context but require more GPU memory.
+</ParamField>
+
+<ParamField path="stride_size" type="int" default="128">
+  Number of pixels to skip between consecutive patches during sliding window inference.
+  
+  **Impact:** 
+  - Smaller stride = more overlap = better quality but slower
+  - `stride_size = patch_size` = no overlap (fastest)
+  - `stride_size = patch_size / 2` = 50% overlap (recommended)
+</ParamField>
+
+<ParamField path="batch_size" type="int" default="32">
+  Number of patches to process simultaneously during inference.
+  
+  **Impact:** Higher values increase speed but require more GPU memory.
+  
+  Recommended values: `16-64` depending on GPU memory.
+</ParamField>
+
+<ParamField path="quick" type="bool" default="True">
+  Controls model ensemble behavior.
+  
+  - `True`: Uses a single model (specified by `model` parameter) for fast inference
+  - `False`: Ensembles 4 different models (inception, deeplabv3, densenet) for higher accuracy
+  
+  **Performance impact:** Ensemble mode is ~4x slower but typically more accurate.
+</ParamField>
+
+<ParamField path="tta_list" type="list" default="None">
+  List of Test-Time Augmentation (TTA) transforms to apply during inference.
+  
+  **Allowed values:**
+  - `'FLIP_LEFT_RIGHT'`: Horizontal flip
+  - `'ROTATE_90'`: 90-degree rotation
+  - `'ROTATE_180'`: 180-degree rotation
+  - `'ROTATE_270'`: 270-degree rotation
+  
+  **Example:** `['FLIP_LEFT_RIGHT', 'ROTATE_90']`
+  
+  <Note>
+    TTA improves robustness but increases inference time proportionally.
+  </Note>
+</ParamField>
+
+<ParamField path="crf" type="bool" default="False">
+  Whether to apply Conditional Random Fields (CRF) for post-processing.
+  
+  **Note:** Currently not active in the implementation (lines 327-331 are commented).
+</ParamField>
+
+<ParamField path="probs_path" type="str" default="'../Results'">
+  File path to save the probability map (raw model outputs before thresholding).
+  
+  Saved as a compressed TIFF file with JPEG compression.
+</ParamField>
+
+<ParamField path="mask_path" type="str" default="'../Results'">
+  File path to save the binary segmentation mask.
+  
+  Values are thresholded at 0.3: pixels with probability ≥ 0.3 become 255, others become 0.
+</ParamField>
+
+<ParamField path="uncertainty_path" type="str" default="'../Results'">
+  File path to save the prediction uncertainty map (variance across models/augmentations).
+  
+  Higher values indicate less confident predictions.
+</ParamField>
+
+<ParamField path="status" type="dict" default="None">
+  Optional dictionary for tracking progress (used by the web server).
+  
+  The function updates `status['progress']` (0-100) and `status['status']` (status message).
+  
+  **Example:** `status = {'progress': 0, 'status': 'Starting...'}`
+</ParamField>
+
+<ParamField path="mask_level" type="int" default="-1">
+  Pyramid level for mask processing in multi-resolution WSIs.
+  
+  `-1` uses the highest resolution level.
+</ParamField>
+
+<ParamField path="model" type="str" default="'dense'">
+  Which model architecture to use when `quick=True`.
+  
+  **Allowed values:**
+  - `'dense'`: DenseNet-based model
+  - `'inception'`: Inception-based model
+  - `'deeplabv3'`: DeepLabV3 model
+  
+  Only applies when `quick=True`. When `quick=False`, all three models are ensembled.
+</ParamField>
+
+<ParamField path="mode" type="str" default="'colon'" required>
+  Tissue type for selecting the appropriate pre-trained models.
+  
+  **Allowed values:**
+  - `'colon'`: Colon/colorectal tissue (uses DigestPath models)
+  - `'liver'`: Liver tissue (uses PAIP models)
+  - `'breast'`: Breast tissue (uses Camelyon models)
+  
+  <Warning>
+    An exception is raised if an invalid mode is provided.
+  </Warning>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="prediction" type="numpy.ndarray">
+  Binary segmentation mask as a numpy array.
+  
+  **Shape:** `(height, width)` matching the WSI dimensions
+  
+  **Data type:** `float32`
+  
+  **Values:**
+  - `255.0`: Tissue (positive prediction with probability ≥ 0.3)
+  - `0.0`: Background (negative prediction)
+  
+  The threshold value is hardcoded at `0.3` (line 310 in Segmentation.py).
+</ResponseField>
+
+## Code Example
+
+Here's the example from the README showing typical usage:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+prediction = getSegmentation(
+    img_path='path/to/slide.tiff', 
+    patch_size=256, 
+    stride_size=128,
+    batch_size=32,
+    quick=True,
+    tta_list=None,
+    crf=False,
+    save_path=None,
+    status=None
+)
+
+# prediction is now a numpy array with shape (height, width)
+# containing values 0 (background) or 255 (tissue)
+```
+
+### Advanced Example with TTA and Ensemble
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+import numpy as np
+
+# Use ensemble mode with test-time augmentation for maximum accuracy
+prediction = getSegmentation(
+    img_path='/data/slides/colon_sample.tiff',
+    patch_size=256,
+    stride_size=128,  # 50% overlap
+    batch_size=16,    # Lower batch size for ensemble mode
+    quick=False,      # Enable 4-model ensemble
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90'],  # Apply augmentations
+    mode='colon',
+    mask_path='./results/mask.tiff',
+    probs_path='./results/probabilities.tiff',
+    uncertainty_path='./results/uncertainty.tiff'
+)
+
+# Analyze results
+tissue_pixels = np.sum(prediction == 255)
+total_pixels = prediction.size
+tissue_percentage = (tissue_pixels / total_pixels) * 100
+
+print(f"Tissue coverage: {tissue_percentage:.2f}%")
+print(f"Prediction shape: {prediction.shape}")
+```
+
+## Output Files
+
+The function automatically saves three TIFF files:
+
+1. **Probability Map** (`probs_path`): Raw probability values (0.0 to 1.0)
+2. **Binary Mask** (`mask_path`): Thresholded segmentation (0 or 255)
+3. **Uncertainty Map** (`uncertainty_path`): Prediction variance scaled to 0-255
+
+All files are saved with JPEG compression and tiled structure (256x256 tiles) for efficient viewing.
+
+## Performance Notes
+
+<Warning>
+  GPU memory requirements:
+  - Quick mode (single model): ~4-6 GB
+  - Ensemble mode (4 models): ~12-16 GB
+  - Adjust `batch_size` if you encounter out-of-memory errors
+</Warning>
+
+**Typical processing times** (on NVIDIA V100):
+- Small WSI (10,000 x 10,000): 2-5 minutes (quick), 8-20 minutes (ensemble)
+- Medium WSI (50,000 x 50,000): 15-30 minutes (quick), 60-120 minutes (ensemble)
+- Large WSI (100,000 x 100,000): 60-120 minutes (quick), 4-8 hours (ensemble)
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Parameter Reference" icon="sliders" href="/api/parameters">
+    Detailed documentation for all parameters
+  </Card>
+  
+  <Card title="Python API Overview" icon="code" href="/api/overview">
+    Overview of the Python API
+  </Card>
+</CardGroup>

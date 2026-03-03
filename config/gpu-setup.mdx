@@ -1,0 +1,286 @@
+---
+title: 'GPU Configuration'
+description: 'Configure CUDA and TensorFlow GPU settings for optimal segmentation performance'
+icon: 'microchip'
+---
+
+## Overview
+
+DigiPathAI uses TensorFlow with GPU acceleration to perform deep learning-based segmentation. Proper GPU configuration is essential for optimal performance and stability.
+
+## CUDA Device Selection
+
+By default, DigiPathAI uses GPU device 0. You can change which GPU to use by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+
+### Single GPU
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+python main_server.py
+```
+
+<Note>
+  GPU device selection is configured in `Segmentation.py:62`:
+  ```python
+  os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+  ```
+</Note>
+
+### Multiple GPUs
+
+To use multiple GPUs (for parallel processing of multiple slides):
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1
+python main_server.py
+```
+
+### CPU-Only Mode
+
+To disable GPU and run on CPU only:
+
+```bash
+export CUDA_VISIBLE_DEVICES=""
+python main_server.py
+```
+
+<Warning>
+  CPU-only mode is significantly slower for segmentation tasks. Only use this for testing or when GPU is unavailable.
+</Warning>
+
+## TensorFlow GPU Configuration
+
+### Memory Growth
+
+DigiPathAI enables GPU memory growth to prevent TensorFlow from allocating all available GPU memory at startup. This is configured in `Segmentation.py:282-285`:
+
+```python
+core_config = tf.ConfigProto()
+core_config.gpu_options.allow_growth = True 
+session = tf.Session(config=core_config) 
+K.set_session(session)
+```
+
+<Note>
+  Memory growth allows TensorFlow to allocate GPU memory as needed rather than reserving all available memory. This is crucial for running multiple processes or leaving memory for other applications.
+</Note>
+
+### Custom GPU Configuration
+
+For advanced GPU configuration, you can modify the TensorFlow session config:
+
+```python Custom GPU Settings
+import tensorflow as tf
+from tensorflow.keras import backend as K
+
+# Create custom configuration
+config = tf.ConfigProto()
+
+# Allow GPU memory growth
+config.gpu_options.allow_growth = True
+
+# Limit GPU memory usage to specific fraction (e.g., 80%)
+config.gpu_options.per_process_gpu_memory_fraction = 0.8
+
+# Enable soft placement (fallback to CPU if operation not available on GPU)
+config.allow_soft_placement = True
+
+# Log device placement for debugging
+config.log_device_placement = False
+
+# Create session with custom config
+session = tf.Session(config=config)
+K.set_session(session)
+```
+
+## Batch Size Tuning
+
+Batch size significantly impacts GPU memory usage and processing speed. It's configured as a parameter to `getSegmentation()`.
+
+<ParamField path="batch_size" type="integer" default="32">
+  Number of patches processed simultaneously on GPU.
+</ParamField>
+
+### Recommended Batch Sizes
+
+| GPU Memory | Patch Size 256 | Patch Size 512 |
+|------------|----------------|----------------|
+| 4 GB       | 8-16           | 2-4            |
+| 8 GB       | 16-32          | 4-8            |
+| 11 GB      | 32-64          | 8-16           |
+| 16 GB+     | 64-128         | 16-32          |
+
+### Adjusting Batch Size
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# For 8GB GPU
+getSegmentation(
+    img_path='slide.tiff',
+    batch_size=32,  # Adjust based on GPU memory
+    patch_size=256
+)
+```
+
+<Warning>
+  If you encounter `Out of Memory (OOM)` errors, reduce the batch size. If GPU utilization is low, increase batch size for better performance.
+</Warning>
+
+## Memory Management
+
+### Monitoring GPU Usage
+
+Monitor GPU utilization and memory usage:
+
+```bash
+# Real-time monitoring
+watch -n 1 nvidia-smi
+
+# Or install gpustat
+pip install gpustat
+gpustat -i 1
+```
+
+### Memory Optimization Tips
+
+<Accordion title="Reduce patch size">
+  Smaller patches require less GPU memory but may affect segmentation quality:
+  
+  ```python
+  getSegmentation(
+      img_path='slide.tiff',
+      patch_size=128,  # Reduced from default 256
+      batch_size=64
+  )
+  ```
+</Accordion>
+
+<Accordion title="Reduce number of workers">
+  Fewer data loading workers reduce CPU memory usage:
+  
+  The `num_workers` parameter in `get_prediction()` defaults to 8. Reduce if experiencing memory issues:
+  
+  ```python
+  # In Segmentation.py, modify get_prediction call
+  get_prediction(
+      wsi_path=img_path,
+      num_workers=4,  # Reduced from default 8
+      batch_size=batch_size
+  )
+  ```
+</Accordion>
+
+<Accordion title="Clear GPU memory between runs">
+  Explicitly clear TensorFlow session:
+  
+  ```python
+  from tensorflow.keras import backend as K
+  
+  # After segmentation
+  K.clear_session()
+  ```
+</Accordion>
+
+## Multi-GPU Configuration
+
+For processing multiple slides in parallel across multiple GPUs:
+
+```python Multi-GPU Processing
+import os
+from multiprocessing import Process
+from DigiPathAI.Segmentation import getSegmentation
+
+def process_slide(slide_path, gpu_id):
+    # Set GPU for this process
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    
+    getSegmentation(
+        img_path=slide_path,
+        batch_size=32
+    )
+
+# Process two slides on different GPUs
+slides = ['slide1.tiff', 'slide2.tiff']
+processes = []
+
+for i, slide in enumerate(slides):
+    p = Process(target=process_slide, args=(slide, i))
+    p.start()
+    processes.append(p)
+
+for p in processes:
+    p.join()
+```
+
+## Requirements
+
+### CUDA Installation
+
+DigiPathAI requires:
+- CUDA Toolkit 10.0 or later
+- cuDNN 7.6 or later
+- Compatible NVIDIA GPU (compute capability 3.5+)
+
+Verify installation:
+
+```bash
+nvcc --version
+nvidia-smi
+```
+
+### TensorFlow GPU
+
+Install TensorFlow with GPU support:
+
+```bash
+pip install tensorflow-gpu==1.15.0
+```
+
+<Note>
+  DigiPathAI is built with TensorFlow 1.x. Ensure you install the GPU-enabled version compatible with your CUDA installation.
+</Note>
+
+## Troubleshooting
+
+<Accordion title="CUDA/cuDNN not found errors">
+  Ensure CUDA and cuDNN libraries are in your `LD_LIBRARY_PATH`:
+  
+  ```bash
+  export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+  ```
+</Accordion>
+
+<Accordion title="Out of Memory (OOM) errors">
+  1. Reduce `batch_size`
+  2. Reduce `patch_size`
+  3. Enable memory growth (already enabled by default)
+  4. Close other GPU applications
+  5. Use a GPU with more memory
+</Accordion>
+
+<Accordion title="GPU not being utilized">
+  1. Verify CUDA installation: `nvidia-smi`
+  2. Check TensorFlow can see GPU:
+     ```python
+     import tensorflow as tf
+     print(tf.test.is_gpu_available())
+     ```
+  3. Ensure `CUDA_VISIBLE_DEVICES` is set correctly
+  4. Check that you're not running in `--viewer-only` mode
+</Accordion>
+
+<Accordion title="Slow processing despite GPU availability">
+  1. Increase `batch_size` if GPU memory allows
+  2. Increase `num_workers` for data loading
+  3. Reduce `stride_size` to process fewer patches
+  4. Disable test-time augmentation if enabled
+</Accordion>
+
+## Source Reference
+
+GPU configuration code is located in:
+- `Segmentation.py:62` - CUDA device selection
+- `Segmentation.py:282-285` - TensorFlow GPU session configuration
+- `Segmentation.py:68` - Batch size parameter
+- `Segmentation.py:71` - Number of workers parameter

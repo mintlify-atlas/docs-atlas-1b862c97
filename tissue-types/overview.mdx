@@ -1,0 +1,90 @@
+---
+title: 'Tissue Types Overview'
+description: 'Supported tissue types and their model ensembles'
+icon: 'microscope'
+---
+
+## Supported Tissue Types
+
+DigiPathAI supports segmentation for three major cancer tissue types, each with specialized model ensembles trained on domain-specific datasets:
+
+<CardGroup cols={3}>
+  <Card title="Colon Cancer" icon="circle" href="/tissue-types/colon">
+    DigestPath dataset models for colorectal tissue segmentation
+  </Card>
+  
+  <Card title="Liver Cancer" icon="circle" href="/tissue-types/liver">
+    PAIP dataset models for hepatocellular carcinoma segmentation
+  </Card>
+  
+  <Card title="Breast Cancer" icon="circle" href="/tissue-types/breast">
+    Camelyon dataset models for metastatic breast cancer detection
+  </Card>
+</CardGroup>
+
+## Model Ensembles
+
+Each tissue type is supported by an ensemble of three state-of-the-art deep learning architectures:
+
+### Architecture Components
+
+| Model | Description | Strengths |
+|-------|-------------|----------|
+| **InceptionV3** | Multi-scale feature extraction | Captures features at multiple resolutions |
+| **DenseNet** | Dense connections between layers | Efficient feature reuse and gradient flow |
+| **DeepLabV3** | Atrous spatial pyramid pooling | Precise boundary delineation |
+
+<Note>
+When `quick=False`, DigiPathAI uses all three models in ensemble mode for improved accuracy. When `quick=True`, only a single model is used for faster inference.
+</Note>
+
+## Performance Characteristics
+
+### Inference Modes
+
+<Tabs>
+  <Tab title="Quick Mode">
+    **Single Model Inference**
+    - Uses one selected architecture (dense/inception/deeplabv3)
+    - Faster processing time
+    - Suitable for rapid prototyping
+    - Good for resource-constrained environments
+  </Tab>
+  
+  <Tab title="Ensemble Mode">
+    **Multi-Model Ensemble**
+    - Combines predictions from all three architectures
+    - Higher accuracy through model diversity
+    - Better uncertainty quantification
+    - Recommended for production use
+  </Tab>
+</Tabs>
+
+### Model Selection
+
+The tissue type is specified using the `mode` parameter in the `getSegmentation()` function:
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Colon cancer segmentation
+getSegmentation(img_path='slide.tiff', mode='colon')
+
+# Liver cancer segmentation
+getSegmentation(img_path='slide.tiff', mode='liver')
+
+# Breast cancer segmentation
+getSegmentation(img_path='slide.tiff', mode='breast')
+```
+
+<Tip>
+The models are automatically downloaded on first use and cached locally in `~/.DigiPathAI/` for future inference.
+</Tip>
+
+## Next Steps
+
+Explore detailed documentation for each tissue type:
+
+- [Colon Cancer Segmentation](/tissue-types/colon) - DigestPath dataset models
+- [Liver Cancer Segmentation](/tissue-types/liver) - PAIP dataset models  
+- [Breast Cancer Segmentation](/tissue-types/breast) - Camelyon dataset models

@@ -1,0 +1,135 @@
+---
+title: 'Colon Cancer Segmentation'
+description: 'DigestPath dataset models for colorectal tissue analysis'
+icon: 'circle'
+---
+
+## Overview
+
+DigiPathAI provides specialized models for colon cancer segmentation, trained on the DigestPath dataset. These models detect and segment cancerous regions in colorectal histopathology slides.
+
+## DigestPath Dataset
+
+The DigestPath dataset contains annotated whole slide images of colorectal cancer tissue. The model ensemble includes:
+
+<CardGroup cols={3}>
+  <Card title="Inception" icon="brain">
+    Multi-scale feature extraction for diverse tissue patterns
+  </Card>
+  
+  <Card title="DenseNet" icon="network-wired">
+    Dense connections for efficient feature learning
+  </Card>
+  
+  <Card title="DeepLabV3" icon="border-all">
+    Precise boundary segmentation with atrous convolution
+  </Card>
+</CardGroup>
+
+## Model Details
+
+The colon cancer models are automatically managed by DigiPathAI:
+
+```python
+# From Segmentation.py lines 232-246
+if mode == 'colon':
+    path = os.path.join(home, '.DigiPathAI/digestpath_models')
+    if (not os.path.exists(os.path.join(path, 'digestpath_inception.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'digestpath_deeplabv3.h5'))) or \
+        (not os.path.exists(os.path.join(path, 'digestpath_densenet.h5'))):
+        if status is not None: status['status'] = "Downloading Trained Models"
+        download_digestpath() 
+        model_path_inception = os.path.join(path, 'digestpath_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'digestpath_deeplabv3.h5')
+        model_path_densenet = os.path.join(path, 'digestpath_densenet.h5')
+    else :
+        if status is not None: status['status'] = "Found Trained Models, Skipping download"
+        model_path_inception = os.path.join(path, 'digestpath_inception.h5')
+        model_path_deeplabv3 = os.path.join(path, 'digestpath_deeplabv3.h5')
+        model_path_densenet = os.path.join(path, 'digestpath_densenet.h5')
+```
+
+<Note>
+Models are stored in `~/.DigiPathAI/digestpath_models/` and include:
+- `digestpath_inception.h5`
+- `digestpath_deeplabv3.h5`
+- `digestpath_densenet.h5`
+</Note>
+
+## Usage Example
+
+### Basic Colon Segmentation
+
+```python
+from DigiPathAI.Segmentation import getSegmentation
+
+# Segment colon cancer tissue
+prediction = getSegmentation(
+    img_path='colon_slide.tiff',
+    mode='colon',
+    patch_size=256,
+    stride_size=128,
+    batch_size=32,
+    quick=False  # Use ensemble of all three models
+)
+```
+
+### Quick Mode (Single Model)
+
+```python
+# Use only DenseNet for faster inference
+prediction = getSegmentation(
+    img_path='colon_slide.tiff',
+    mode='colon',
+    model='dense',
+    quick=True
+)
+```
+
+### With Test-Time Augmentation
+
+```python
+# Improve accuracy with TTA
+prediction = getSegmentation(
+    img_path='colon_slide.tiff',
+    mode='colon',
+    tta_list=['FLIP_LEFT_RIGHT', 'ROTATE_90'],
+    quick=False
+)
+```
+
+<Tip>
+For production use with colon tissue, set `quick=False` to leverage the full ensemble. This provides better accuracy and uncertainty estimates.
+</Tip>
+
+## Parameters
+
+| Parameter | Description | Default | Colon-Specific Notes |
+|-----------|-------------|---------|---------------------|
+| `mode` | Tissue type | - | Must be set to `'colon'` |
+| `model` | Architecture choice | `'dense'` | Options: 'dense', 'inception', 'deeplabv3' |
+| `quick` | Single vs ensemble | `True` | Set to `False` for ensemble |
+| `patch_size` | Inference patch size | `256` | Recommended: 256 for colon |
+| `stride_size` | Sliding window stride | `128` | Smaller values = more overlap |
+| `batch_size` | Batch size for inference | `32` | Adjust based on GPU memory |
+
+## Output
+
+The segmentation returns three files:
+
+1. **Probability Map** - Continuous probability values (0-1)
+2. **Binary Mask** - Thresholded segmentation (threshold=0.3)
+3. **Uncertainty Map** - Model variance for quality assessment
+
+```python
+# Outputs are saved as pyramidal TIFF files
+# - probs_path: Probability heatmap
+# - mask_path: Binary segmentation mask  
+# - uncertainty_path: Prediction uncertainty
+```
+
+## Related
+
+- [Liver Cancer Segmentation](/tissue-types/liver) - PAIP models
+- [Breast Cancer Segmentation](/tissue-types/breast) - Camelyon models
+- [API Reference](/api/segmentation) - Full parameter documentation
