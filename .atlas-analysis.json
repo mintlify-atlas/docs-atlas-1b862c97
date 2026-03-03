@@ -1,0 +1,100 @@
+{
+  "projectType": "saas",
+  "projectName": "DigiPathAI",
+  "projectDescription": "AI-powered whole slide image viewer and cancer tissue segmentation tool for digital pathology",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "guide/web-interface",
+              "guide/running-segmentation",
+              "guide/understanding-results"
+            ]
+          },
+          {
+            "group": "Tissue Types",
+            "pages": [
+              "tissue-types/overview",
+              "tissue-types/colon",
+              "tissue-types/liver",
+              "tissue-types/breast"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "config/server-options",
+              "config/gpu-setup",
+              "config/advanced"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Python API",
+            "pages": [
+              "api/overview",
+              "api/segmentation",
+              "api/parameters"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/digipathai-command",
+              "cli/options"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "models/overview",
+              "models/densenet",
+              "models/inception",
+              "models/deeplabv3"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Responsive whole slide image (WSI) viewer with Deep Zoom support",
+    "AI-powered cancer tissue segmentation using ensemble deep learning models",
+    "Support for multiple tissue types (colon, liver, breast)",
+    "Python API for programmatic segmentation",
+    "Web-based GUI for interactive visualization",
+    "Test-time augmentation (TTA) for improved accuracy",
+    "Uncertainty quantification in predictions",
+    "GPU-accelerated inference with batch processing"
+  ],
+  "publicApiSurface": [
+    "getSegmentation() - Main segmentation function",
+    "digipathai - CLI command to launch web server",
+    "get_prediction() - Low-level prediction function",
+    "load_trained_models() - Model loading utility",
+    "WSIStridedPatchDataset - Data loader for whole slide images",
+    "unet_densenet121() - DenseNet U-Net model",
+    "get_inception_resnet_v2_unet_softmax() - Inception-ResNet U-Net model",
+    "Deeplabv3() - DeepLabv3 segmentation model"
+  ]
+}
